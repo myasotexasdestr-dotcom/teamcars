@@ -415,6 +415,9 @@ VIEWS.home=()=>{
   const sum=a=>{const by={};a.forEach(d=>{const c=dcur(d);by[c]=(by[c]||0)+d.total});const ks=Object.keys(by).sort((x,y)=>x===PRICE_CUR?-1:y===PRICE_CUR?1:0);return ks.length?ks.map(c=>money(by[c],c)).join(' + '):money(0,PRICE_CUR)};
   const newCnt=DB.deals.filter(d=>d.status==='new').length;
   const units=activeProducts().reduce((s,p)=>s+totalQty(p.id),0);
+  const inStock=activeProducts().filter(p=>totalQty(p.id)>0);
+  const stockValue=inStock.reduce((s,p)=>s+totalQty(p.id)*(Number(p.price)||0),0);
+  const noPrice=inStock.filter(p=>!(Number(p.price)>0)).length;
   const recent=[...DB.finTx].sort(byAtDesc).slice(0,5);
   const month=today.toLocaleDateString('uk-UA',{month:'long'});
   return `
@@ -429,6 +432,11 @@ VIEWS.home=()=>{
     <button type="button" class="card tap" data-act="spendSheet" data-v="FOP_UAH" aria-label="Списати з ФОП UAH"><div class="row" style="gap:6px;color:var(--gold)">${icon('fop',16,2)}<h2 style="color:var(--ink)">ФОП</h2></div><div class="row" style="gap:4px;align-items:baseline"><span class="mid">${nf(balance('FOP_UAH'))}</span><span class="muted sm">₴</span></div></button>
   </div>
   <div class="row between wrap" style="padding:0 6px;margin-top:-4px;gap:4px 12px"><span class="muted xs">Натисніть на баланс, щоб списати або внести кошти</span><button type="button" class="link xs" data-act="go" data-v="expLog">Журнал списань</button></div>
+  <button type="button" class="card tap" style="flex-direction:row;align-items:center;gap:14px" data-act="tab" data-v="stock" aria-label="Загальна вартість запчастин, відкрити склад">
+    <span style="width:44px;height:44px;border-radius:14px;background:var(--warn-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('stock',22,1.9)}</span>
+    <span class="col grow" style="gap:2px"><span class="sm" style="font-weight:700;color:var(--ink2)">Загальна вартість запчастин</span><span class="mid">${money(stockValue,PRICE_CUR)}</span><span class="muted xs">${units} шт. · ${posWord(inStock.length)} на складах${noPrice?` · ${noPrice} без ціни`:''}</span></span>
+    <span style="color:var(--dim)">${icon('chevron',18,2)}</span>
+  </button>
   <button type="button" class="btn-hero" data-act="newDeal"><span class="plus">${icon('plus',18,2.4)}</span>Створити угоду</button>
   <div class="grid2 grid-stats">
     <section class="card" style="gap:6px"><h3 class="sm" style="color:var(--ink2)">Продажі сьогодні</h3><span class="mid">${sum(dT)}</span><span class="muted xs">${dT.length} ${plural(dT.length,'угода','угоди','угод')}</span></section>
