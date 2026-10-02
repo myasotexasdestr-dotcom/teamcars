@@ -656,14 +656,16 @@ function whListHtml(){
   if(UI.whTab!=='all') list=list.filter(p=>invRec(p.id,UI.whTab));
   list.sort((a,b)=>a.name.localeCompare(b.name,'uk'));
   const head=`<div class="row between muted sm" style="padding:0 4px"><span>${posWord(list.length)}</span><span>За алфавітом</span></div>`;
-  if(!list.length) return head+`<div class="empty">${toks.length?'Нічого не знайдено':'Тут поки немає товарів'}</div>`;
+  const q0=UI.whQ.trim();
+  const addBtn=q0?`<button type="button" class="btn primary" style="align-self:center;max-width:100%;white-space:normal;height:auto;min-height:52px;padding:10px 20px" data-act="addFromSearch">${icon('plus',18,2.2)}<span>Додати «${esc(q0.length>40?q0.slice(0,40)+'…':q0)}»</span></button>`:'';
+  if(!list.length) return head+(toks.length?`<div class="card" style="align-items:center;text-align:center;gap:12px;padding:24px 16px"><span style="font-weight:700">Такого товару ще немає на складі</span><span class="muted sm">Додайте його — назву або номер уже підставлено</span>${addBtn}</div>`:'<div class="empty">Тут поки немає товарів</div>');
   return head+list.map(p=>{const q=UI.whTab==='all'?totalQty(p.id):invQty(p.id,UI.whTab);const r=reservedQty(p.id,UI.whTab==='all'?null:UI.whTab);
     const st=q>0?`${q} шт.${r?` · <span style="color:var(--warn)">${r} в угоді</span>`:''}`:r>0?`<span style="color:var(--warn)">В угоді · ${r} шт.</span>`:'Немає в наявності';
     return `<button type="button" class="item ${q>0?'':r>0?'held':'out'}" data-act="openProduct" data-id="${p.id}">
       <span class="thumb">${p.photos&&p.photos.length?`<img src="${p.photos[0]}" alt="">`:icon('photo',22,1.6)}</span>
       <span class="col grow" style="gap:2px"><span class="code ${p.catalogNumber?'':'none'}">${esc(p.catalogNumber||'Без каталожного номера')}</span><span class="name">${esc(p.name)}</span>
       <span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${st}${p.block?` · <span style="color:var(--ink2)">Блок ${p.block}</span>`:''}${p.defective?' · <span style="color:var(--warn)">дефект</span>':''}</span></span>
-      <span class="num" style="font-size:15px;font-weight:700;flex-shrink:0">${money(p.price,PRICE_CUR)}</span></button>`}).join('');
+      <span class="num" style="font-size:15px;font-weight:700;flex-shrink:0">${money(p.price,PRICE_CUR)}</span></button>`}).join('')+(q0?`<button type="button" class="link" style="align-self:center;padding:12px;font-size:14px" data-act="addFromSearch">Немає потрібного? Додати новий товар</button>`:'');
 }
 VIEWS.stock=()=>{
   const ps=activeProducts();const units=ps.reduce((s,p)=>s+totalQty(p.id),0);
@@ -718,11 +720,15 @@ function invRow(t,showProduct){
 }
 
 /* product form */
-function startForm(id){
+const looksLikeCode=q=>/^[A-Za-z0-9][A-Za-z0-9.\-\/]{3,}$/.test(q)&&/\d/.test(q);
+function startForm(id,prefill){
   const p=id?prod(id):null; const ws=activeWh();
   UI.form=p?{id:p.id,block:p.block?String(p.block):'',code:p.catalogNumber||'',name:p.name,price:String(p.price),condition:p.condition,defective:p.defective,notes:p.notes||'',photos:[...(p.photos||[])],stock:Object.fromEntries(ws.map(w=>[w.id,invQty(p.id,w.id)])),error:''}
     :{id:null,block:'',code:'',name:'',price:'',condition:'used',defective:false,notes:'',photos:[],stock:Object.fromEntries(ws.map(w=>[w.id,0])),error:''};
+  if(!p){const target=UI.whTab!=='all'&&wh(UI.whTab)?.active?UI.whTab:(defaultWh()||{}).id;if(target)UI.form.stock[target]=1}
+  if(!p&&prefill){const q=prefill.trim();if(looksLikeCode(q))UI.form.code=q.toUpperCase();else UI.form.name=q.charAt(0).toUpperCase()+q.slice(1)}
   go('productForm');
+  if(!p&&prefill){setTimeout(()=>{const el=$(UI.form.name?'#pf-price':'#pf-name');if(el)el.focus()},50)}
 }
 const pfPhotosHtml=()=>{const f=UI.form;return `${f.photos.map((ph,i)=>`<div><img src="${ph}" alt="Фото ${i+1}"><button type="button" class="x" data-act="pfPhotoDel" data-v="${i}" aria-label="Видалити фото ${i+1}">×</button></div>`).join('')}
   <label class="photo-add" for="pf-file">${icon('plus',20,2)}Додати<input id="pf-file" type="file" accept="image/*" multiple class="vh" data-change="pfPhotos"></label>`};
@@ -904,6 +910,7 @@ A.ndAcct=el=>{const dr=UI.draft;dr.acct=el.dataset.v;dr.amount='';dr.touched=!pr
 A.ndShip=()=>ndShip();
 A.whTab=el=>{UI.whTab=el.dataset.v;render()};
 A.newProduct=()=>startForm(null);
+A.addFromSearch=()=>startForm(null,UI.whQ);
 A.editProduct=el=>startForm(el.dataset.id);
 A.photoIdx=el=>{UI.photoIdx=Number(el.dataset.v);render()};
 A.sellProduct=el=>{const p=prod(el.dataset.id);const dw=defaultWh();let w=dw&&invQty(p.id,dw.id)>0?dw.id:null;
