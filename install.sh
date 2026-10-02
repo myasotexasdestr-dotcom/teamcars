@@ -34,7 +34,7 @@ fi
 ok "порт $PORT свободен (или уже занят самим teamcars)"
 
 say "2/6 Загрузка кода в $DEST"
-FILES="server.js package.json ecosystem.config.cjs .env.example README.md install.sh
+FILES="server.js package.json ecosystem.config.cjs README.md install.sh
 src/db.js src/logic.js src/sqlite.js public/index.html
 scripts/backup.js scripts/reset-pin.js docs/TZ.md"
 mkdir -p "$DEST"/{src,public,scripts,docs} "$DATA"
