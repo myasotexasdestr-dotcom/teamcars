@@ -280,6 +280,12 @@ const ACCOUNTS=[
   {id:'FOP_UAH',name:'ФОП UAH',currency:'UAH'}
 ];
 const ACC=Object.fromEntries(ACCOUNTS.map(a=>[a.id,a]));
+const PRICE_CUR='USD';
+const dcur=d=>(d&&d.currency)||'UAH';
+const prefillCur=(accCur,cur)=>accCur===cur||(cur==='USD'&&accCur==='USDT');
+const defaultAcct=cur=>cur==='USD'?'CASH_USD':'CASH_UAH';
+const rateLabel=(rate,accCur,dealCur)=>!rate||accCur===dealCur?'':dealCur==='UAH'?`1 ${accCur} = ${nf(rate)} ₴`:`1 ${dealCur} = ${nf(rate)} ${accCur==='UAH'?'₴':accCur}`;
+const BLOCKS=Array.from({length:20},(_,i)=>i+1);
 const ROLES={admin:'Адмін',owner:'Власник'};
 const isAdmin=()=>ME&&ME.role==='admin';
 const INV_TYPES={receipt:'Прихід',sale:'Продаж',adjustment:'Корекція',transfer:'Переміщення',return:'Повернення'};
@@ -406,7 +412,7 @@ VIEWS.home=()=>{
   const sameMonth=iso=>{const t=new Date(iso);return t.getFullYear()===today.getFullYear()&&t.getMonth()===today.getMonth()};
   const live=DB.deals.filter(d=>d.status!=='cancelled');
   const dT=live.filter(d=>sameDay(d.createdAt)), dM=live.filter(d=>sameMonth(d.createdAt));
-  const sum=a=>a.reduce((s,d)=>s+d.total,0);
+  const sum=a=>{const by={};a.forEach(d=>{const c=dcur(d);by[c]=(by[c]||0)+d.total});const ks=Object.keys(by).sort((x,y)=>x===PRICE_CUR?-1:y===PRICE_CUR?1:0);return ks.length?ks.map(c=>money(by[c],c)).join(' + '):money(0,PRICE_CUR)};
   const newCnt=DB.deals.filter(d=>d.status==='new').length;
   const units=activeProducts().reduce((s,p)=>s+totalQty(p.id),0);
   const recent=[...DB.finTx].sort(byAtDesc).slice(0,5);
@@ -425,8 +431,8 @@ VIEWS.home=()=>{
   <div class="row between wrap" style="padding:0 6px;margin-top:-4px;gap:4px 12px"><span class="muted xs">Натисніть на баланс, щоб списати або внести кошти</span><button type="button" class="link xs" data-act="go" data-v="expLog">Журнал списань</button></div>
   <button type="button" class="btn-hero" data-act="newDeal"><span class="plus">${icon('plus',18,2.4)}</span>Створити угоду</button>
   <div class="grid2 grid-stats">
-    <section class="card" style="gap:6px"><h3 class="sm" style="color:var(--ink2)">Продажі сьогодні</h3><span class="mid">${money(sum(dT))}</span><span class="muted xs">${dT.length} ${plural(dT.length,'угода','угоди','угод')}</span></section>
-    <section class="card" style="gap:6px"><h3 class="sm" style="color:var(--ink2)">Продажі за місяць</h3><span class="mid">${money(sum(dM))}</span><span class="muted xs">${esc(month)}</span></section>
+    <section class="card" style="gap:6px"><h3 class="sm" style="color:var(--ink2)">Продажі сьогодні</h3><span class="mid">${sum(dT)}</span><span class="muted xs">${dT.length} ${plural(dT.length,'угода','угоди','угод')}</span></section>
+    <section class="card" style="gap:6px"><h3 class="sm" style="color:var(--ink2)">Продажі за місяць</h3><span class="mid">${sum(dM)}</span><span class="muted xs">${esc(month)}</span></section>
     <button type="button" class="card" style="gap:6px;border:0;text-align:left" data-act="tab" data-v="deals"><div class="row between" style="width:100%"><h3 class="sm" style="color:var(--ink2)">Угод за місяць</h3>${newCnt?`<span class="chip warn">${newCnt} нов${plural(newCnt,'а','і','их')}</span>`:''}</div><span class="mid">${dM.length}</span><span class="muted xs">усього ${live.length}</span></button>
     <button type="button" class="card" style="gap:6px;border:0;text-align:left" data-act="tab" data-v="stock"><h3 class="sm" style="color:var(--ink2)">Товарів на складі</h3><span class="mid">${units} шт.</span><span class="muted xs">${activeWh().length} ${plural(activeWh().length,'склад','склади','складів')}</span></button>
   </div>
@@ -441,7 +447,7 @@ function finRow(t){
   if(t.type==='deposit') return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">Внесення · ${esc(t.purpose)}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)} · ${esc(t.takenBy||'')}</span></div><span class="num" style="font-weight:800;color:var(--blue)">+${money(Math.abs(t.amount),t.currency)}</span></div>`;
   if(t.type==='opening') return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">Початковий залишок</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}</span></div><span class="num" style="font-weight:800;color:var(--blue)">+${money(Math.abs(t.amount),t.currency)}</span></div>`;
   if(t.type==='expense') return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">Списання · ${esc(t.purpose)}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)} · взяв ${esc(t.takenBy)}</span></div><span class="num" style="font-weight:800;color:var(--warn)">−${money(Math.abs(t.amount),t.currency)}</span></div>`;
-  return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">${FIN_TYPES[t.type]||t.type}${d?` <button type="button" class="link" data-act="openDeal" data-id="${d.id}">№${pad(d.no)}</button>`:''}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}${u?' · '+esc(u.name):''}${t.rate&&t.currency!=='UAH'?` · курс ${nf(t.rate)} ₴`:''}</span></div><span class="num" style="font-weight:800;color:${t.amount>=0?'var(--blue)':'var(--warn)'}">${t.amount>=0?'+':'−'}${money(Math.abs(t.amount),t.currency)}</span></div>`;
+  return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">${FIN_TYPES[t.type]||t.type}${d?` <button type="button" class="link" data-act="openDeal" data-id="${d.id}">№${pad(d.no)}</button>`:''}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}${u?' · '+esc(u.name):''}${t.rate&&t.dealCurrency&&t.currency!==t.dealCurrency?` · ${rateLabel(t.rate,t.currency,t.dealCurrency)}`:''}</span></div><span class="num" style="font-weight:800;color:${t.amount>=0?'var(--blue)':'var(--warn)'}">${t.amount>=0?'+':'−'}${money(Math.abs(t.amount),t.currency)}</span></div>`;
 }
 
 /* deals */
@@ -455,7 +461,7 @@ function dealsListHtml(){
   if(!list.length) return `<div class="empty">${UI.dealsQ?'Нічого не знайдено':UI.dealsTab==='new'?'Неоплачених угод немає':'Виконаних угод ще немає'}</div>`;
   return list.map(d=>`<button type="button" class="deal" data-act="openDeal" data-id="${d.id}">
     <div class="row between" style="width:100%"><span style="font-size:13px;font-weight:800;letter-spacing:.3px">№${pad(d.no)}</span><span class="muted sm">${fmtDate(d.createdAt)}</span></div>
-    <div class="row between gap" style="width:100%;align-items:baseline"><span style="font-size:16px;font-weight:700">${esc(d.customerName)}</span><span class="num" style="font-size:18px;font-weight:700;white-space:nowrap">${money(d.total)}</span></div>
+    <div class="row between gap" style="width:100%;align-items:baseline"><span style="font-size:16px;font-weight:700">${esc(d.customerName)}</span><span class="num" style="font-size:18px;font-weight:700;white-space:nowrap">${money(d.total,dcur(d))}</span></div>
     <div class="row wrap" style="gap:6px"><span class="chip">${partsWord(d.items.length)}</span><span class="chip">${d.deliveryType==='delivery'?'Доставка':'Самовивіз'}</span>${d.status==='new'?'<span class="chip warn">Не оплачено</span>':`<span class="chip ok">${esc(ACC[d.payment.accountId].name)} · ${money(d.payment.amount,d.payment.currency)}</span>`}</div>
   </button>`).join('');
 }
@@ -490,14 +496,14 @@ VIEWS.deal=({id})=>{
   ${pay?`<section class="card"><h2>Оплата</h2><div>
     <div class="kv"><span class="muted">Рахунок</span><b>${esc(ACC[pay.accountId].name)}</b></div>
     <div class="kv"><span class="muted">Зараховано</span><b class="num">${money(pay.amount,pay.currency)}</b></div>
-    ${pay.currency!=='UAH'?`<div class="kv"><span class="muted">Курс по угоді</span><b class="num">1 ${pay.currency} = ${nf(pay.rate)} ₴</b></div>`:''}
+    ${pay.currency!==dcur(d)?`<div class="kv"><span class="muted">Курс по угоді</span><b class="num">${rateLabel(pay.rate,pay.currency,dcur(d))}</b></div>`:''}
     <div class="kv"><span class="muted">Дата</span><b>${fmtDT(d.paidAt)}</b></div>
   </div></section>`:''}
   </div>
   <section class="card" style="gap:2px">
     <div class="card-head" style="padding-bottom:6px"><h2>Запчастини</h2><span class="muted sm">${posWord(d.items.length)} · ${units} шт.</span></div>
-    <div class="lines">${d.items.map(i=>{const p=prod(i.productId);const w=wh(i.warehouseId);return `<div><div class="col grow"><button type="button" class="link" style="color:var(--ink);text-decoration:none;text-align:left;font-size:14px" data-act="openProduct" data-id="${i.productId}">${esc(p?p.name:'—')}${p&&!p.active?' <span class="chip">видалено</span>':''}</button><span class="muted sm">${esc(p&&p.catalogNumber||'без номера')} · ${esc(w?w.name:'—')} · ${i.quantity} × ${money(i.price)}</span></div><b class="num">${money(i.quantity*i.price)}</b></div>`}).join('')}</div>
-    <div class="row between" style="padding-top:12px;border-top:1px solid var(--fieldline);align-items:baseline"><span class="muted">Загальна сума</span><span class="mid">${money(d.total)}</span></div>
+    <div class="lines">${d.items.map(i=>{const p=prod(i.productId);const w=wh(i.warehouseId);return `<div><div class="col grow"><button type="button" class="link" style="color:var(--ink);text-decoration:none;text-align:left;font-size:14px" data-act="openProduct" data-id="${i.productId}">${esc(p?p.name:'—')}${p&&!p.active?' <span class="chip">видалено</span>':''}</button><span class="muted sm">${esc(p&&p.catalogNumber||'без номера')} · ${esc(w?w.name:'—')}${p&&p.block?' · Блок '+p.block:''} · ${i.quantity} × ${money(i.price,dcur(d))}</span></div><b class="num">${money(i.quantity*i.price,dcur(d))}</b></div>`}).join('')}</div>
+    <div class="row between" style="padding-top:12px;border-top:1px solid var(--fieldline);align-items:baseline"><span class="muted">Загальна сума</span><span class="mid">${money(d.total,dcur(d))}</span></div>
   </section>
   ${d.status==='new'?`<button type="button" class="btn text" data-act="dealDeleteAsk" data-id="${d.id}">${icon('trash',18,2)}Видалити угоду</button>`:''}
   </div>
@@ -505,28 +511,29 @@ VIEWS.deal=({id})=>{
 };
 
 /* payment helpers */
-function payHint(acct,amountStr,total){
-  const a=ACC[acct]; const isUah=a.currency==='UAH';
+function payHint(acct,amountStr,total,cur='UAH'){
+  const a=ACC[acct]; const same=a.currency===cur;
   const raw=String(amountStr??'').trim();
-  const amt=raw===''&&isUah?total:parseNum(raw);
+  const amt=raw===''&&prefillCur(a.currency,cur)?total:parseNum(raw);
   const valid=amt>0;
+  const rate=!valid?null:same?1:(cur==='UAH'?total/amt:amt/total);
   let text,warn=false;
-  if(isUah){
+  if(same){
     if(!valid){text='Введіть суму більше нуля';warn=true}
     else if(Math.abs(amt-total)<0.005) text='Дорівнює сумі угоди';
-    else {text=(amt<total?'Менше':'Більше')+' за суму угоди на '+money(Math.abs(amt-total));warn=true}
-  } else text=valid?`Курс по угоді: 1 ${a.currency} = ${nf(total/amt)} ₴`:`Введіть суму в ${a.currency}, яку фактично отримали`;
-  return {amt,valid,text,warn,rate:valid?(isUah?1:total/amt):null};
+    else {text=(amt<total?'Менше':'Більше')+' за суму угоди на '+money(Math.abs(amt-total),cur);warn=true}
+  } else text=valid?'Курс по угоді: '+rateLabel(rate,a.currency,cur):`Введіть суму в ${a.currency}, яку фактично отримали`;
+  return {amt,valid,text,warn,rate};
 }
-function amountField(id,inputName,acct,amount,total){
-  const a=ACC[acct]; const h=payHint(acct,amount,total);
+function amountField(id,inputName,acct,amount,total,cur='UAH'){
+  const a=ACC[acct]; const h=payHint(acct,amount,total,cur);
   return `<div class="field"><label for="${id}" class="lbl">Сума зарахування</label>
-  <div class="amount"><input id="${id}" type="text" inputmode="decimal" autocomplete="off" value="${esc(amount)}" placeholder="${a.currency==='UAH'?esc(String(total)):'0'}" data-input="${inputName}"><span>${curSign(a.currency)}</span></div>
+  <div class="amount"><input id="${id}" type="text" inputmode="decimal" autocomplete="off" value="${esc(amount)}" placeholder="${prefillCur(a.currency,cur)?esc(String(total)):'0'}" data-input="${inputName}"><span>${curSign(a.currency)}</span></div>
   <div class="hint ${h.warn?'warn':''}" id="${id}-hint">${esc(h.text)}</div></div>`;
 }
 /* new deal */
 function startDeal(prefill){
-  UI.draft={customer:'',delivery:'pickup',details:'',query:'',items:[],received:false,acct:'CASH_UAH',amount:'',touched:false,error:''};
+  UI.draft={cur:PRICE_CUR,customer:'',delivery:'pickup',details:'',query:'',items:[],received:false,acct:defaultAcct(PRICE_CUR),amount:'',touched:false,error:''};
   if(prefill) UI.draft.items.push({key:uid(),...prefill});
   go('newDeal');
 }
@@ -543,7 +550,7 @@ function ndResultsHtml(){
   if(!rows.length) return '<span class="muted sm" style="padding:0 6px">У базі нічого не знайдено</span>';
   return `<div class="res">${rows.slice(0,12).map(({p,w,q,r})=>{
     const inDeal=w&&dr.items.some(i=>i.productId===p.id&&i.warehouseId===w.id);
-    return `<div><div class="col grow"><span class="name" style="white-space:normal">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')} · ${w?esc(w.name)+' · '+q+' шт.':r?'усе в неоплачених угодах':'немає в наявності'}</span><span class="num" style="font-size:13px;font-weight:700">${money(p.price)}</span></div>
+    return `<div><div class="col grow"><span class="name" style="white-space:normal">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')}${p.block?' · Блок '+p.block:''} · ${w?esc(w.name)+' · '+q+' шт.':r?'усе в неоплачених угодах':'немає в наявності'}</span><span class="num" style="font-size:13px;font-weight:700">${money(p.price,PRICE_CUR)}</span></div>
     ${!w?(r?'<span class="chip warn">В угоді</span>':'<span class="chip">0 шт.</span>'):inDeal?'<span class="chip ok">В угоді</span>':`<button type="button" class="btn primary small" data-act="ndAdd" data-p="${p.id}" data-w="${w.id}">Додати</button>`}</div>`}).join('')}</div>`;
 }
 function ndItemsHtml(){
@@ -551,12 +558,12 @@ function ndItemsHtml(){
   if(!dr.items.length) return '<div class="empty" style="padding:14px">Знайдіть запчастину та натисніть «Додати»</div>';
   return dr.items.map(i=>{const p=prod(i.productId);const w=wh(i.warehouseId);const avail=availFor(i);const atMax=i.quantity>=avail;
     return `<div class="ditem">
-      <div class="row" style="gap:8px;align-items:flex-start"><div class="col grow"><span style="font-size:14px;font-weight:700">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')} · ${esc(w.name)}</span></div>
+      <div class="row" style="gap:8px;align-items:flex-start"><div class="col grow"><span style="font-size:14px;font-weight:700">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')} · ${esc(w.name)}${p.block?' · Блок '+p.block:''}</span></div>
       <button type="button" class="icon-btn" style="background:var(--card)" data-act="ndRemove" data-k="${i.key}" aria-label="Видалити позицію">${icon('trash',16,2)}</button></div>
       <div class="row" style="gap:10px">
         <div class="stepper" style="background:var(--card);border:1px solid var(--fieldline)"><button type="button" data-act="ndQty" data-k="${i.key}" data-d="-1" aria-label="Менше" ${i.quantity<=1?'disabled':''}>−</button><span class="v">${i.quantity}</span><button type="button" class="plus" data-act="ndQty" data-k="${i.key}" data-d="1" aria-label="Більше" ${atMax?'disabled':''}>+</button></div>
         <span class="muted sm">з ${avail} шт.</span>
-        <label class="price-in"><span class="vh">Ціна в цій угоді</span><input type="text" inputmode="decimal" value="${esc(i.price)}" data-input="ndPrice" data-k="${i.key}"><span class="muted">₴</span></label>
+        <label class="price-in"><span class="vh">Ціна в цій угоді</span><input type="text" inputmode="decimal" value="${esc(i.price)}" data-input="ndPrice" data-k="${i.key}"><span class="muted">${curSign(UI.draft.cur)}</span></label>
       </div>
       ${atMax?'<span class="sm" style="font-weight:700;color:var(--warn)">Це весь залишок на цьому складі</span>':''}${UI.draft.orig&&origOf(i.productId,i.warehouseId)?`<span class="muted xs">Було в угоді: ${origOf(i.productId,i.warehouseId)} шт.</span>`:''}
     </div>`}).join('');
@@ -564,24 +571,24 @@ function ndItemsHtml(){
 function ndPayHtml(){
   const dr=UI.draft; if(!dr.received) return '';
   const total=draftTotal();
-  const val=ACC[dr.acct].currency==='UAH'&&!dr.touched?String(total):dr.amount;
+  const val=prefillCur(ACC[dr.acct].currency,dr.cur)&&!dr.touched?String(total):dr.amount;
   return `<div class="col" style="gap:8px"><span class="lbl">Куди отримано кошти?</span>
     <div class="acct-grid">${ACCOUNTS.map(a=>`<button type="button" class="acct-chip ${dr.acct===a.id?'on':''}" aria-pressed="${dr.acct===a.id}" data-act="ndAcct" data-v="${a.id}">${a.name}</button>`).join('')}</div></div>
-    ${amountField('nd-amt','ndAmt',dr.acct,val,total)}`;
+    ${amountField('nd-amt','ndAmt',dr.acct,val,total,dr.cur)}`;
 }
 function ndHint(){const dr=UI.draft;if(dr.editDealId)return 'Додані позиції спишуться зі складу, прибрані — повернуться. Оплату приймайте в картці угоди.';if(!dr.received)return 'Угода потрапить у «Нові» (не оплачена). Товар спишеться зі складу одразу.';
-  const total=draftTotal();const val=ACC[dr.acct].currency==='UAH'&&!dr.touched?String(total):dr.amount;const h=payHint(dr.acct,val,total);
+  const total=draftTotal();const val=prefillCur(ACC[dr.acct].currency,dr.cur)&&!dr.touched?String(total):dr.amount;const h=payHint(dr.acct,val,total,dr.cur);
   return `Угода потрапить у «Виконані», ${h.valid?money(h.amt,ACC[dr.acct].currency):'[сума]'} надійде на ${ACC[dr.acct].name}. Товар спишеться зі складу.`}
 function ndRefresh(){
   const dr=UI.draft;
   patch('#nd-items',ndItemsHtml()); patch('#nd-results',ndResultsHtml());
-  patch('#nd-total',money(draftTotal())); patch('#nd-count',posWord(dr.items.length));
+  patch('#nd-total',money(draftTotal(),UI.draft.cur)); patch('#nd-count',posWord(dr.items.length));
   patch('#nd-pay',ndPayHtml()); patch('#nd-hint',ndHint());
 }
 function ndRefreshTotals(){
   const dr=UI.draft,total=draftTotal();
-  patch('#nd-total',money(total)); patch('#nd-hint',ndHint());
-  if(dr.received){const inp=$('#nd-amt');if(inp){if(ACC[dr.acct].currency==='UAH'&&!dr.touched)inp.value=String(total);inp.placeholder=ACC[dr.acct].currency==='UAH'?String(total):'0';const h=payHint(dr.acct,inp.value,total);const hint=$('#nd-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'')}}
+  patch('#nd-total',money(total,dr.cur)); patch('#nd-hint',ndHint());
+  if(dr.received){const inp=$('#nd-amt');if(inp){if(prefillCur(ACC[dr.acct].currency,dr.cur)&&!dr.touched)inp.value=String(total);inp.placeholder=prefillCur(ACC[dr.acct].currency,dr.cur)?String(total):'0';const h=payHint(dr.acct,inp.value,total,dr.cur);const hint=$('#nd-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'')}}
 }
 VIEWS.newDeal=()=>{
   const dr=UI.draft||(startDraftSilently(),UI.draft);
@@ -600,7 +607,7 @@ VIEWS.newDeal=()=>{
   </section>
   </div>
   <section class="card dark" style="gap:14px;padding:18px">
-    <div class="row between" style="align-items:baseline"><span class="hint" style="font-size:14px">Загальна сума</span><span class="num" style="font-size:30px;font-weight:300" id="nd-total">${money(draftTotal())}</span></div>
+    <div class="row between" style="align-items:baseline"><span class="hint" style="font-size:14px">Загальна сума</span><span class="num" style="font-size:30px;font-weight:300" id="nd-total">${money(draftTotal(),dr.cur)}</span></div>
     ${ed?'':`<label class="check"><input type="checkbox" id="nd-received" ${dr.received?'checked':''} data-change="ndReceived">Кошти отримано</label>
     <div id="nd-pay" class="stack">${ndPayHtml()}</div>`}
     <span class="hint" id="nd-hint">${ndHint()}</span>
@@ -612,10 +619,10 @@ VIEWS.newDeal=()=>{
 function startEditDeal(id){
   const d=deal(id); if(!d||d.status!=='new') return toast('Оплачену угоду змінювати не можна');
   const orig={}; d.items.forEach(i=>{const k=i.productId+'|'+i.warehouseId;orig[k]=(orig[k]||0)+i.quantity});
-  UI.draft={editDealId:id,orig,customer:d.customerName,delivery:d.deliveryType,details:d.deliveryDetails||'',query:'',items:d.items.map(i=>({key:uid(),productId:i.productId,warehouseId:i.warehouseId,quantity:i.quantity,price:String(i.price)})),received:false,acct:'CASH_UAH',amount:'',touched:false,error:''};
+  UI.draft={editDealId:id,orig,cur:dcur(d),customer:d.customerName,delivery:d.deliveryType,details:d.deliveryDetails||'',query:'',items:d.items.map(i=>({key:uid(),productId:i.productId,warehouseId:i.warehouseId,quantity:i.quantity,price:String(i.price)})),received:false,acct:'CASH_UAH',amount:'',touched:false,error:''};
   go('newDeal');
 }
-function startDraftSilently(){UI.draft={customer:'',delivery:'pickup',details:'',query:'',items:[],received:false,acct:'CASH_UAH',amount:'',touched:false,error:''}}
+function startDraftSilently(){UI.draft={cur:PRICE_CUR,customer:'',delivery:'pickup',details:'',query:'',items:[],received:false,acct:defaultAcct(PRICE_CUR),amount:'',touched:false,error:''}}
 const ndSegHtml=()=>{const v=UI.draft.delivery;return `<button type="button" role="radio" aria-checked="${v==='pickup'}" class="${v==='pickup'?'on':''}" data-act="ndDelivery" data-v="pickup">Самовивіз</button><button type="button" role="radio" aria-checked="${v==='delivery'}" class="${v==='delivery'?'on':''}" data-act="ndDelivery" data-v="delivery">Доставка</button>`};
 const ndDeliveryHtml=()=>UI.draft.delivery!=='delivery'?'':`<div class="field"><label for="nd-details">Дані для доставки</label><textarea id="nd-details" class="textarea" rows="3" placeholder="Нова Пошта, відділення №15, Київ, +380…, Іван Іванов" data-input="ndDetails">${esc(UI.draft.details)}</textarea></div>`;
 
@@ -634,7 +641,7 @@ async function ndShip(){
   try{
     if(dr.editDealId){const r=await act('updateDeal',{...base,dealId:dr.editDealId});UI.draft=null;back();toast(`Угоду №${pad(r.no)} оновлено, залишки перераховано`);return}
     let payment=null;
-    if(dr.received){const val=ACC[dr.acct].currency==='UAH'&&!dr.touched?String(total):dr.amount;h=payHint(dr.acct,val,total);if(!h.valid) return err('Вкажіть суму зарахування');payment={accountId:dr.acct,amount:h.amt}}
+    if(dr.received){const val=prefillCur(ACC[dr.acct].currency,dr.cur)&&!dr.touched?String(total):dr.amount;h=payHint(dr.acct,val,total,dr.cur);if(!h.valid) return err('Вкажіть суму зарахування');payment={accountId:dr.acct,amount:h.amt}}
     const r=await act('createDeal',{...base,payment});
     UI.draft=null; const d=deal(r.dealId); UI.dealsTab=d?d.status:'new';
     go('deal',{id:r.dealId},{replace:true});
@@ -655,8 +662,8 @@ function whListHtml(){
     return `<button type="button" class="item ${q>0?'':r>0?'held':'out'}" data-act="openProduct" data-id="${p.id}">
       <span class="thumb">${p.photos&&p.photos.length?`<img src="${p.photos[0]}" alt="">`:icon('photo',22,1.6)}</span>
       <span class="col grow" style="gap:2px"><span class="code ${p.catalogNumber?'':'none'}">${esc(p.catalogNumber||'Без каталожного номера')}</span><span class="name">${esc(p.name)}</span>
-      <span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${st}${p.defective?' · <span style="color:var(--warn)">дефект</span>':''}</span></span>
-      <span class="num" style="font-size:15px;font-weight:700;flex-shrink:0">${money(p.price)}</span></button>`}).join('');
+      <span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${st}${p.block?` · <span style="color:var(--ink2)">Блок ${p.block}</span>`:''}${p.defective?' · <span style="color:var(--warn)">дефект</span>':''}</span></span>
+      <span class="num" style="font-size:15px;font-weight:700;flex-shrink:0">${money(p.price,PRICE_CUR)}</span></button>`}).join('');
 }
 VIEWS.stock=()=>{
   const ps=activeProducts();const units=ps.reduce((s,p)=>s+totalQty(p.id),0);
@@ -683,9 +690,9 @@ VIEWS.product=({id})=>{
     <div class="col" style="gap:6px;padding:0 6px">
       <span class="code ${p.catalogNumber?'':'none'}" style="font-size:13px">${esc(p.catalogNumber||'Без каталожного номера')}</span>
       <h2 style="font-size:22px">${esc(p.name)}</h2>
-      <div class="row wrap" style="gap:6px"><span class="chip">${p.condition==='new'?'Новий':'БУ'}</span>${p.defective?'<span class="chip warn">З дефектом</span>':'<span class="chip ok">Без дефекту</span>'}${p.active?'':'<span class="chip dark">Видалено</span>'}</div>
+      <div class="row wrap" style="gap:6px">${p.block?`<span class="chip dark">Блок ${p.block}</span>`:''}<span class="chip">${p.condition==='new'?'Новий':'БУ'}</span>${p.defective?'<span class="chip warn">З дефектом</span>':'<span class="chip ok">Без дефекту</span>'}${p.active?'':'<span class="chip dark">Видалено</span>'}</div>
     </div>
-    <div class="row between" style="padding:0 6px 6px;align-items:baseline"><span class="muted">Ціна</span><span class="num" style="font-size:30px;font-weight:300">${money(p.price)}</span></div>
+    <div class="row between" style="padding:0 6px 6px;align-items:baseline"><span class="muted">Ціна</span><span class="num" style="font-size:30px;font-weight:300">${money(p.price,PRICE_CUR)}</span></div>
   </section>
   ${p.notes?`<section class="card" style="gap:6px"><h2>Нотатка</h2><p style="margin:0;line-height:1.45;color:var(--ink2);white-space:pre-wrap">${esc(p.notes)}</p></section>`:''}
   </div><div class="stack">
@@ -713,8 +720,8 @@ function invRow(t,showProduct){
 /* product form */
 function startForm(id){
   const p=id?prod(id):null; const ws=activeWh();
-  UI.form=p?{id:p.id,code:p.catalogNumber||'',name:p.name,price:String(p.price),condition:p.condition,defective:p.defective,notes:p.notes||'',photos:[...(p.photos||[])],stock:Object.fromEntries(ws.map(w=>[w.id,invQty(p.id,w.id)])),error:''}
-    :{id:null,code:'',name:'',price:'',condition:'used',defective:false,notes:'',photos:[],stock:Object.fromEntries(ws.map(w=>[w.id,0])),error:''};
+  UI.form=p?{id:p.id,block:p.block?String(p.block):'',code:p.catalogNumber||'',name:p.name,price:String(p.price),condition:p.condition,defective:p.defective,notes:p.notes||'',photos:[...(p.photos||[])],stock:Object.fromEntries(ws.map(w=>[w.id,invQty(p.id,w.id)])),error:''}
+    :{id:null,block:'',code:'',name:'',price:'',condition:'used',defective:false,notes:'',photos:[],stock:Object.fromEntries(ws.map(w=>[w.id,0])),error:''};
   go('productForm');
 }
 const pfPhotosHtml=()=>{const f=UI.form;return `${f.photos.map((ph,i)=>`<div><img src="${ph}" alt="Фото ${i+1}"><button type="button" class="x" data-act="pfPhotoDel" data-v="${i}" aria-label="Видалити фото ${i+1}">×</button></div>`).join('')}
@@ -731,7 +738,8 @@ VIEWS.productForm=()=>{
   <section class="card" style="gap:14px">
     <div class="field"><label for="pf-code">Каталожний номер <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="pf-code" class="input" style="font-weight:700;letter-spacing:.3px" value="${esc(f.code)}" placeholder="Напр. 8K0407253F" data-input="pf" data-f="code" autocomplete="off"></div>
     <div class="field"><label for="pf-name">Назва <span style="color:var(--danger)">*</span></label><input id="pf-name" class="input" value="${esc(f.name)}" placeholder="Назва запчастини" data-input="pf" data-f="name" autocomplete="off" required></div>
-    <div class="field"><label for="pf-price">Ціна, ₴</label><input id="pf-price" class="input num" inputmode="decimal" value="${esc(f.price)}" placeholder="0" data-input="pf" data-f="price" autocomplete="off"></div>
+    <div class="field"><label for="pf-block">Розташування на складі</label><select id="pf-block" class="input select" data-change="pfBlock"><option value="" ${f.block?'':'selected'}>Не вказано</option>${BLOCKS.map(n=>`<option value="${n}" ${String(f.block)===String(n)?'selected':''}>Блок ${n}</option>`).join('')}</select></div>
+    <div class="field"><label for="pf-price">Ціна, $</label><input id="pf-price" class="input num" inputmode="decimal" value="${esc(f.price)}" placeholder="0" data-input="pf" data-f="price" autocomplete="off"></div>
   </section>
   <section class="card"><h2>Стан</h2><div class="seg" id="pf-cond" role="radiogroup" aria-label="Стан">${pfCondHtml()}</div>
     <label class="check"><input type="checkbox" id="pf-defect" ${f.defective?'checked':''} data-change="pfDefect" style="accent-color:var(--ink)">Є дефект</label></section>
@@ -751,7 +759,7 @@ async function pfSave(){
   const price=f.price.trim()===''?0:parseNum(f.price); if(!(price>=0)) return err('Ціна має бути числом');
   for(const w of activeWh()){const v=f.stock[w.id];if(!Number.isInteger(v)||v<0) return err(`Кількість на «${w.name}» має бути цілим числом від 0`)}
   try{
-    const r=await act('saveProduct',{id:f.id,catalogNumber:f.code.trim(),name,price,condition:f.condition,defective:f.defective,notes:f.notes.trim(),photos:f.photos,stock:f.stock});
+    const r=await act('saveProduct',{id:f.id,block:f.block,catalogNumber:f.code.trim(),name,price,condition:f.condition,defective:f.defective,notes:f.notes.trim(),photos:f.photos,stock:f.stock});
     const isNew=!f.id; UI.form=null; UI.photoIdx=0;
     if(isNew) go('product',{id:r.productId},{replace:true}); else back();
     toast(isNew?'Товар додано':'Зміни збережено');
@@ -801,10 +809,10 @@ VIEWS.finLog=()=>`${subhead('Фінансові операції')}
 
 /* ---------- sheets ---------- */
 const SHEETS={};
-SHEETS.pay=s=>{const d=deal(s.dealId);const h=payHint(s.acct,s.amount,d.total);
-  return sheetWrap('Куди отримано кошти?',`<span class="muted" style="margin-top:-8px">Сума угоди №${pad(d.no)} — <b class="num" style="color:var(--ink)">${money(d.total)}</b></span>
+SHEETS.pay=s=>{const d=deal(s.dealId);const cur=dcur(d);const h=payHint(s.acct,s.amount,d.total,cur);
+  return sheetWrap('Куди отримано кошти?',`<span class="muted" style="margin-top:-8px">Сума угоди №${pad(d.no)} — <b class="num" style="color:var(--ink)">${money(d.total,cur)}</b></span>
   <div class="stack" style="gap:8px">${ACCOUNTS.map(a=>`<button type="button" class="acct ${a.id===s.acct?'on':''}" aria-pressed="${a.id===s.acct}" data-act="payAcct" data-v="${a.id}"><span class="radio"></span><span class="grow">${a.name}</span><span class="muted sm num">${money(balance(a.id),a.currency)}</span></button>`).join('')}</div>
-  ${amountField('pay-amt','payAmt',s.acct,s.amount,d.total)}
+  ${amountField('pay-amt','payAmt',s.acct,s.amount,d.total,cur)}
   <div class="err" role="alert">${esc(s.error||'')}</div>
   <div class="row gap"><button type="button" class="btn ghost grow" data-act="closeSheet">Скасувати</button><button type="button" class="btn primary grow2" id="pay-ok" data-act="payConfirm" ${h.valid?'':'disabled'}>Зарахувати</button></div>`)};
 SHEETS.spend=s=>{const a=ACC[s.acct];const bal=balance(s.acct);const users=DB.users.filter(u=>u.active);const dep=s.mode==='in';
@@ -868,9 +876,9 @@ A.editDeal=el=>startEditDeal(el.dataset.id);
 A.dealsTab=el=>{UI.dealsTab=el.dataset.v;render()};
 A.openDeal=el=>go('deal',{id:el.dataset.id});
 A.openProduct=el=>{UI.photoIdx=0;go('product',{id:el.dataset.id})};
-A.paySheet=el=>openSheet({type:'pay',dealId:el.dataset.id,acct:'CASH_UAH',amount:String(deal(el.dataset.id).total),error:''});
-A.payAcct=el=>{const s=UI.sheet,d=deal(s.dealId);s.acct=el.dataset.v;s.amount=ACC[s.acct].currency==='UAH'?String(d.total):'';s.error='';renderSheet();const i=$('#pay-amt');if(i&&!s.amount)i.focus()};
-A.payConfirm=async()=>{const s=UI.sheet,d=deal(s.dealId);const h=payHint(s.acct,s.amount,d.total);if(!h.valid)return;
+A.paySheet=el=>{const d=deal(el.dataset.id);openSheet({type:'pay',dealId:d.id,acct:defaultAcct(dcur(d)),amount:String(d.total),error:''})};
+A.payAcct=el=>{const s=UI.sheet,d=deal(s.dealId);s.acct=el.dataset.v;s.amount=prefillCur(ACC[s.acct].currency,dcur(d))?String(d.total):'';s.error='';renderSheet();const i=$('#pay-amt');if(i&&!s.amount)i.focus()};
+A.payConfirm=async()=>{const s=UI.sheet,d=deal(s.dealId);const h=payHint(s.acct,s.amount,d.total,dcur(d));if(!h.valid)return;
   try{await act('payDeal',{dealId:d.id,accountId:s.acct,amount:h.amt});UI.sheet=null;UI.dealsTab='done';render();toast(`Зараховано ${money(h.amt,ACC[s.acct].currency)} → ${ACC[s.acct].name}`)}catch(e){sheetErr(e)}};
 A.closeSheet=()=>{closeSheet();if(STALE&&canAutoRender())render()};
 A.spendSheet=el=>openSheet({type:'spend',mode:'out',acct:el.dataset.v,amount:'',who:ME.id,whoName:'',when:localDT(new Date()),purpose:'',error:''});
@@ -892,7 +900,7 @@ A.ndDelivery=el=>{UI.draft.delivery=el.dataset.v;patch('#nd-seg',ndSegHtml());pa
 A.ndAdd=el=>{const p=prod(el.dataset.p);UI.draft.items.push({key:uid(),productId:p.id,warehouseId:el.dataset.w,quantity:1,price:String(p.price)});UI.draft.error='';patch('#nd-err','');ndRefresh()};
 A.ndRemove=el=>{UI.draft.items=UI.draft.items.filter(i=>i.key!==el.dataset.k);ndRefresh()};
 A.ndQty=el=>{const i=UI.draft.items.find(x=>x.key===el.dataset.k);const avail=availFor(i);i.quantity=Math.max(1,Math.min(avail,i.quantity+Number(el.dataset.d)));patch('#nd-items',ndItemsHtml());ndRefreshTotals()};
-A.ndAcct=el=>{const dr=UI.draft;dr.acct=el.dataset.v;dr.amount='';dr.touched=ACC[dr.acct].currency!=='UAH';patch('#nd-pay',ndPayHtml());patch('#nd-hint',ndHint());if(dr.touched){const i=$('#nd-amt');if(i)i.focus()}};
+A.ndAcct=el=>{const dr=UI.draft;dr.acct=el.dataset.v;dr.amount='';dr.touched=!prefillCur(ACC[dr.acct].currency,dr.cur);patch('#nd-pay',ndPayHtml());patch('#nd-hint',ndHint());if(dr.touched){const i=$('#nd-amt');if(i)i.focus()}};
 A.ndShip=()=>ndShip();
 A.whTab=el=>{UI.whTab=el.dataset.v;render()};
 A.newProduct=()=>startForm(null);
@@ -949,18 +957,19 @@ A.whDefault=async el=>{try{await act('setDefaultWarehouse',{id:el.dataset.id});r
 const I={};
 I.dealsQ=el=>{UI.dealsQ=el.value;patch('#deals-list',dealsListHtml())};
 I.whQ=el=>{UI.whQ=el.value;patch('#wh-list',whListHtml())};
-I.payAmt=el=>{const s=UI.sheet,d=deal(s.dealId);s.amount=el.value;const h=payHint(s.acct,s.amount,d.total);const hint=$('#pay-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'');$('#pay-ok').disabled=!h.valid};
+I.payAmt=el=>{const s=UI.sheet,d=deal(s.dealId);s.amount=el.value;const h=payHint(s.acct,s.amount,d.total,dcur(d));const hint=$('#pay-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'');$('#pay-ok').disabled=!h.valid};
 I.ndCustomer=el=>{UI.draft.customer=el.value};
 I.ndDetails=el=>{UI.draft.details=el.value};
 I.ndQ=el=>{UI.draft.query=el.value;patch('#nd-results',ndResultsHtml())};
 I.ndPrice=el=>{const i=UI.draft.items.find(x=>x.key===el.dataset.k);i.price=el.value;ndRefreshTotals()};
-I.ndAmt=el=>{const dr=UI.draft;dr.amount=el.value;dr.touched=true;const total=draftTotal();const h=payHint(dr.acct,el.value,total);const hint=$('#nd-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'');patch('#nd-hint',ndHint())};
+I.ndAmt=el=>{const dr=UI.draft;dr.amount=el.value;dr.touched=true;const total=draftTotal();const h=payHint(dr.acct,el.value,total,dr.cur);const hint=$('#nd-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'');patch('#nd-hint',ndHint())};
 I.pf=el=>{UI.form[el.dataset.f]=el.value};
 I.pfStockIn=el=>{const v=parseInt(el.value,10);UI.form.stock[el.dataset.w]=Number.isFinite(v)&&v>=0?v:0;patch('#pf-total',String(pfTotal()))};
 I.sheetField=el=>{UI.sheet[el.dataset.f]=el.value};
 const C={};
 C.ndReceived=el=>{const dr=UI.draft;dr.received=el.checked;patch('#nd-pay',ndPayHtml());patch('#nd-hint',ndHint())};
 C.pfDefect=el=>{UI.form.defective=el.checked};
+C.pfBlock=el=>{UI.form.block=el.value};
 C.spendWho=el=>{UI.sheet.who=el.value;renderSheet()};
 C.whDefaultChk=el=>{UI.sheet.isDefault=el.checked};
 C.pfPhotos=async el=>{const files=Array.from(el.files||[]);if(files.length)toast('Завантажую фото…');for(const f of files){try{UI.form.photos.push(await uploadPhoto(await readImage(f)))}catch(e){toast(e.code?errMsg(e):'Не вдалося прочитати '+f.name)}}el.value='';patch('#pf-photos',pfPhotosHtml());patch('#pf-photo-count',UI.form.photos.length+' фото')};

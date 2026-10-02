@@ -3,7 +3,7 @@
 // або змінюється все (угода + залишки + журнал + гроші), або нічого.
 
 const crypto = require('crypto');
-const { ACCOUNTS } = require('./db');
+const { ACCOUNTS, PRICE_CURRENCY } = require('./db');
 
 class AppError extends Error {
   constructor(message, status = 400, code = 'bad_request') { super(message); this.status = status; this.code = code; }
@@ -70,10 +70,10 @@ function createLogic(db, secret) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(newId('it_'), productId, warehouseId, change, before, after, type, dealId, userId, at);
   }
   function addFin(f) {
-    q(`INSERT INTO financial_transactions (id, account_id, amount, currency, type, deal_id, deal_amount_uah, rate, user_id, at, taken_by, taken_by_user_id, purpose, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    q(`INSERT INTO financial_transactions (id, account_id, amount, currency, type, deal_id, deal_amount_uah, deal_currency, rate, user_id, at, taken_by, taken_by_user_id, purpose, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       newId('ft_'), f.accountId, round2(f.amount), ACC[f.accountId].currency, f.type, f.dealId || null,
-      f.dealAmountUah ?? null, f.rate ?? null, f.userId, f.at || nowISO(), f.takenBy || null, f.takenByUserId || null, f.purpose || null, nowISO());
+      f.dealAmountUah ?? null, f.dealCurrency || null, f.rate ?? null, f.userId, f.at || nowISO(), f.takenBy || null, f.takenByUserId || null, f.purpose || null, nowISO());
   }
 
   // ---------- validation helpers ----------
@@ -102,15 +102,20 @@ function createLogic(db, secret) {
     }
     return items;
   }
-  function payInfo(accountId, amountRaw, totalUah) {
+  // Курс: якщо угода в гривні — ₴ за одиницю валюти рахунку; інакше — валюта рахунку за 1 одиницю валюти угоди.
+  function calcRate(accCur, dealCur, amount, total) {
+    if (accCur === dealCur) return 1;
+    const r = dealCur === 'UAH' ? total / amount : amount / total;
+    return Math.round(r * 10000) / 10000;
+  }
+  function payInfo(accountId, amountRaw, total, dealCur) {
     const a = needAccount(accountId);
-    const amount = (amountRaw === '' || amountRaw == null) && a.currency === 'UAH' ? totalUah : num(amountRaw, 'Сума зарахування', { allowZero: false });
+    const amount = (amountRaw === '' || amountRaw == null) && a.currency === dealCur ? total : num(amountRaw, 'Сума зарахування', { allowZero: false });
     if (!(amount > 0)) fail('Сума зарахування має бути більше 0');
-    const rate = a.currency === 'UAH' ? 1 : Math.round((totalUah / amount) * 10000) / 10000;
-    return { account: a, amount, rate };
+    return { account: a, amount, rate: calcRate(a.currency, dealCur, amount, total) };
   }
   function applyPayment(deal, info, user) {
-    addFin({ accountId: info.account.id, amount: info.amount, type: 'sale', dealId: deal.id, dealAmountUah: deal.total, rate: info.rate, userId: user.id });
+    addFin({ accountId: info.account.id, amount: info.amount, type: 'sale', dealId: deal.id, dealAmountUah: deal.total, dealCurrency: deal.currency || 'UAH', rate: info.rate, userId: user.id });
     q(`UPDATE deals SET payment_status = 'paid', status = 'done', paid_at = ?, pay_account = ?, pay_amount = ?, pay_currency = ?, pay_rate = ? WHERE id = ?`)
       .run(nowISO(), info.account.id, info.amount, info.account.currency, info.rate, deal.id);
   }
@@ -141,11 +146,11 @@ function createLogic(db, secret) {
       const total = round2(items.reduce((s, i) => s + i.quantity * i.price, 0));
       const no = Number(getMeta('next_deal_no')); setMeta('next_deal_no', no + 1);
       const id = 'd_' + no + '_' + crypto.randomBytes(3).toString('hex');
-      q(`INSERT INTO deals (id, no, customer_name, delivery_type, delivery_details, total, payment_status, status, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'unpaid', 'new', ?, ?)`).run(id, no, h.customer, h.delivery, h.details, total, user.id, nowISO());
+      q(`INSERT INTO deals (id, no, customer_name, delivery_type, delivery_details, total, currency, payment_status, status, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'unpaid', 'new', ?, ?)`).run(id, no, h.customer, h.delivery, h.details, total, PRICE_CURRENCY, user.id, nowISO());
       insertItems(id, items);
       items.forEach(i => changeInv(i.productId, i.warehouseId, -i.quantity, 'sale', user.id, id));
-      if (p.payment) applyPayment(getDeal(id), payInfo(p.payment.accountId, p.payment.amount, total), user);
+      if (p.payment) applyPayment(getDeal(id), payInfo(p.payment.accountId, p.payment.amount, total, PRICE_CURRENCY), user);
       return { dealId: id, no };
     },
     updateDeal(user, p) {
@@ -170,7 +175,7 @@ function createLogic(db, secret) {
     payDeal(user, p) {
       const d = getDeal(str(p.dealId, 64));
       if (!d || d.status !== 'new') fail('Угоду вже оплачено або видалено', 409, 'state');
-      const info = payInfo(p.accountId, p.amount, d.total);
+      const info = payInfo(p.accountId, p.amount, d.total, d.currency || 'UAH');
       applyPayment(d, info, user);
       return { dealId: d.id, amount: info.amount, currency: info.account.currency, account: info.account.name };
     },
@@ -194,14 +199,16 @@ function createLogic(db, secret) {
       const condition = p.condition === 'new' ? 'new' : 'used';
       const photos = (Array.isArray(p.photos) ? p.photos : []).map(String).filter(u => /^\/photos\/[a-z0-9_-]+\.(jpg|png|webp)$/i.test(u)).slice(0, 20);
       const stock = p.stock && typeof p.stock === 'object' ? p.stock : {};
-      const fields = [str(p.catalogNumber, 100), name, price, condition, p.defective ? 1 : 0, str(p.notes, 4000)];
+      const bn = p.block === '' || p.block == null ? null : Number(p.block);
+      if (bn !== null && !(Number.isInteger(bn) && bn >= 1 && bn <= 20)) fail('Блок має бути від 1 до 20');
+      const fields = [str(p.catalogNumber, 100), name, price, condition, p.defective ? 1 : 0, str(p.notes, 4000), bn];
       let id = p.id ? str(p.id, 64) : null;
       if (id) {
         const ex = getProduct(id); if (!ex || !ex.active) fail('Товар не знайдено');
-        q('UPDATE products SET catalog_number = ?, name = ?, price = ?, condition = ?, defective = ?, notes = ?, updated_at = ? WHERE id = ?').run(...fields, nowISO(), id);
+        q('UPDATE products SET catalog_number = ?, name = ?, price = ?, condition = ?, defective = ?, notes = ?, block = ?, updated_at = ? WHERE id = ?').run(...fields, nowISO(), id);
       } else {
         id = newId('p_');
-        q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)').run(id, ...fields, nowISO(), nowISO());
+        q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, block, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)').run(id, ...fields, nowISO(), nowISO());
       }
       q('DELETE FROM product_photos WHERE product_id = ?').run(id);
       photos.forEach((u, i) => q('INSERT INTO product_photos (product_id, url, position) VALUES (?, ?, ?)').run(id, u, i));
@@ -336,7 +343,7 @@ function createLogic(db, secret) {
     q('SELECT product_id, url FROM product_photos ORDER BY position, id').all().forEach(r => { (photos[r.product_id] ||= []).push(r.url); });
     const products = q('SELECT * FROM products ORDER BY created_at').all().map(p => ({
       id: p.id, catalogNumber: p.catalog_number, name: p.name, price: p.price, condition: p.condition,
-      defective: b(p.defective), notes: p.notes, active: b(p.active), photos: photos[p.id] || [] }));
+      defective: b(p.defective), notes: p.notes, block: p.block ?? null, active: b(p.active), photos: photos[p.id] || [] }));
     const inventory = q('SELECT product_id, warehouse_id, quantity FROM inventory').all()
       .map(r => ({ productId: r.product_id, warehouseId: r.warehouse_id, quantity: r.quantity }));
     const invTx = q('SELECT * FROM inventory_transactions ORDER BY at').all().map(t => ({
@@ -348,18 +355,18 @@ function createLogic(db, secret) {
     });
     const deals = q('SELECT * FROM deals ORDER BY no').all().map(d => ({
       id: d.id, no: d.no, customerName: d.customer_name, deliveryType: d.delivery_type, deliveryDetails: d.delivery_details,
-      items: itemsBy[d.id] || [], total: d.total, paymentStatus: d.payment_status, status: d.status,
+      items: itemsBy[d.id] || [], total: d.total, currency: d.currency || 'UAH', paymentStatus: d.payment_status, status: d.status,
       createdBy: d.created_by, createdAt: d.created_at, paidAt: d.paid_at,
       payment: d.pay_account ? { accountId: d.pay_account, amount: d.pay_amount, currency: d.pay_currency, rate: d.pay_rate } : null,
       editedAt: d.edited_at, editedBy: d.edited_by, cancelledAt: d.cancelled_at, cancelledBy: d.cancelled_by, cancelReason: d.cancel_reason }));
     const finTx = q('SELECT * FROM financial_transactions ORDER BY at').all().map(t => ({
       id: t.id, accountId: t.account_id, amount: t.amount, currency: t.currency, type: t.type, dealId: t.deal_id,
-      dealAmountUah: t.deal_amount_uah, rate: t.rate, userId: t.user_id, at: t.at, takenBy: t.taken_by,
+      dealAmountUah: t.deal_amount_uah, dealCurrency: t.deal_currency || (t.deal_id ? 'UAH' : null), rate: t.rate, userId: t.user_id, at: t.at, takenBy: t.taken_by,
       takenByUserId: t.taken_by_user_id, purpose: t.purpose }));
     return {
       version: version(),
       me: { id: user.id, name: user.name, role: user.role },
-      data: { users, warehouses, products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')) },
+      data: { users, warehouses, products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
     };
   }
 
@@ -398,41 +405,41 @@ function createLogic(db, secret) {
     let n = 0;
     const P = (id, code, name, price, cond, def, notes, stock) => {
       n++;
-      q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)')
-        .run(id, code, name, price, cond, def ? 1 : 0, notes, at(30, 10, n), at(30, 10, n));
+      q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, block, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)')
+        .run(id, code, name, price, cond, def ? 1 : 0, notes, (n * 3) % 20 + 1, at(30, 10, n), at(30, 10, n));
       stock.forEach(([w, qn], i) => changeInv(id, w, qn, 'receipt', i % 2 ? 'u2' : 'u1', null, at(24 - i * 2 - n, 10, 15)));
     };
-    P('p1', '8K0407253F', 'Ричаг передній Audi A4 B8', 3500, 'used', false, 'Знято з авто 2012 р., пробіг 180 тис. км. Сайлентблоки цілі.', [['w1', 3], ['w2', 1]]);
-    P('p2', '8K0941003', 'Фара ліва Audi A4 B8', 12000, 'used', false, 'Без подряпин, кріплення цілі.', [['w2', 2]]);
-    P('p3', '8K0941003', 'Фара ліва Audi A4 B8 (тріщина)', 5000, 'used', true, 'Тріщина корпусу знизу, світить нормально.', [['w2', 1]]);
-    P('p4', '8K0927803', 'Датчик ABS передній Audi A4 B8', 1500, 'used', false, '', [['w1', 8]]);
-    P('p5', '3AB857508', 'Дзеркало праве VW Passat B7', 2800, 'used', false, 'Електропривід і підігрів працюють.', [['w3', 1]]);
-    P('p6', '5E0823031', 'Капот Skoda Octavia A7', 9500, 'used', false, 'Колір 9P9P.', [['w1', 1]]);
-    P('p7', '', 'Підкрилок передній лівий Octavia A7', 600, 'used', false, '', [['w3', 2]]);
-    P('p8', '51127312747', 'Бампер задній BMW F30', 7000, 'used', true, 'Подряпини, потребує фарбування.', [['w2', 1]]);
-    P('p9', '28100-0V010', 'Стартер Toyota Camry 2.5', 4200, 'used', false, 'Перевірений на стенді.', [['w2', 1]]);
-    P('p10', '1K0615301AA', 'Диск гальмівний передній VW Golf 6', 1300, 'new', false, 'Новий, в упаковці.', [['w1', 4]]);
-    P('p11', '6Q0959801', 'Блок склопідйомника VW Polo', 900, 'used', false, '', [['w3', 3]]);
-    [['CASH_UAH', 124100], ['CASH_USD', 2277], ['CRYPTO_USDT', 4520], ['FOP_UAH', 66700]]
+    P('p1', '8K0407253F', 'Ричаг передній Audi A4 B8', 85, 'used', false, 'Знято з авто 2012 р., пробіг 180 тис. км. Сайлентблоки цілі.', [['w1', 3], ['w2', 1]]);
+    P('p2', '8K0941003', 'Фара ліва Audi A4 B8', 290, 'used', false, 'Без подряпин, кріплення цілі.', [['w2', 2]]);
+    P('p3', '8K0941003', 'Фара ліва Audi A4 B8 (тріщина)', 120, 'used', true, 'Тріщина корпусу знизу, світить нормально.', [['w2', 1]]);
+    P('p4', '8K0927803', 'Датчик ABS передній Audi A4 B8', 35, 'used', false, '', [['w1', 8]]);
+    P('p5', '3AB857508', 'Дзеркало праве VW Passat B7', 70, 'used', false, 'Електропривід і підігрів працюють.', [['w3', 1]]);
+    P('p6', '5E0823031', 'Капот Skoda Octavia A7', 230, 'used', false, 'Колір 9P9P.', [['w1', 1]]);
+    P('p7', '', 'Підкрилок передній лівий Octavia A7', 15, 'used', false, '', [['w3', 2]]);
+    P('p8', '51127312747', 'Бампер задній BMW F30', 170, 'used', true, 'Подряпини, потребує фарбування.', [['w2', 1]]);
+    P('p9', '28100-0V010', 'Стартер Toyota Camry 2.5', 100, 'used', false, 'Перевірений на стенді.', [['w2', 1]]);
+    P('p10', '1K0615301AA', 'Диск гальмівний передній VW Golf 6', 32, 'new', false, 'Новий, в упаковці.', [['w1', 4]]);
+    P('p11', '6Q0959801', 'Блок склопідйомника VW Polo', 22, 'used', false, '', [['w3', 3]]);
+    [['CASH_UAH', 124100], ['CASH_USD', 2280], ['CRYPTO_USDT', 4520], ['FOP_UAH', 66700]]
       .forEach(([a, v]) => addFin({ accountId: a, amount: v, type: 'opening', userId: 'u1', at: at(30, 9, 0), purpose: 'Початковий залишок' }));
     const mk = (no, cust, del, det, items, when, uid, pay) => {
       const id = 'd' + no;
       const total = items.reduce((s, [, , qn, pr]) => s + qn * pr, 0);
-      q(`INSERT INTO deals (id, no, customer_name, delivery_type, delivery_details, total, payment_status, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 'unpaid', 'new', ?, ?)`)
-        .run(id, no, cust, del, det, total, uid, when);
+      q(`INSERT INTO deals (id, no, customer_name, delivery_type, delivery_details, total, currency, payment_status, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'unpaid', 'new', ?, ?)`)
+        .run(id, no, cust, del, det, total, PRICE_CURRENCY, uid, when);
       insertItems(id, items.map(([p, w, qn, pr]) => ({ productId: p, warehouseId: w, quantity: qn, price: pr })));
       items.forEach(([p, w, qn]) => changeInv(p, w, -qn, 'sale', uid, id, when));
       if (pay) {
-        const [acc, amt, payAt] = pay; const rate = ACC[acc].currency === 'UAH' ? 1 : Math.round(total / amt * 10000) / 10000;
-        addFin({ accountId: acc, amount: amt, type: 'sale', dealId: id, dealAmountUah: total, rate, userId: uid, at: payAt });
+        const [acc, amt, payAt] = pay; const rate = calcRate(ACC[acc].currency, PRICE_CURRENCY, amt, total);
+        addFin({ accountId: acc, amount: amt, type: 'sale', dealId: id, dealAmountUah: total, dealCurrency: PRICE_CURRENCY, rate, userId: uid, at: payAt });
         q(`UPDATE deals SET payment_status='paid', status='done', paid_at=?, pay_account=?, pay_amount=?, pay_currency=?, pay_rate=? WHERE id=?`).run(payAt, acc, amt, ACC[acc].currency, rate, id);
       }
     };
-    mk(120, 'Сергій Бондар', 'delivery', 'Нова Пошта, відділення №3, Львів, +380 50 111 22 33, Сергій Бондар', [['p6', 'w1', 1, 9500], ['p8', 'w2', 1, 7000]], at(6, 14, 20), 'u1', ['FOP_UAH', 16500, at(5, 11, 5)]);
-    mk(121, 'Віктор Шевчук', 'pickup', '', [['p4', 'w1', 2, 1500]], at(3, 12, 40), 'u2', ['CASH_USD', 73, at(3, 12, 45)]);
-    mk(122, 'Андрій Мельник', 'pickup', '', [['p10', 'w1', 1, 1300]], at(1, 16, 10), 'u1', ['CASH_UAH', 1300, at(1, 16, 12)]);
-    mk(123, 'Олег Коваль', 'pickup', '', [['p9', 'w2', 1, 4200]], at(1, 17, 30), 'u2', null);
-    mk(124, 'Іван Петренко', 'delivery', 'Нова Пошта, відділення №15, Київ, +380 67 123 45 67, Іван Петренко', [['p1', 'w1', 1, 3500], ['p2', 'w2', 1, 12000], ['p4', 'w1', 2, 1500]], at(0, 9, 42), 'u1', null);
+    mk(120, 'Сергій Бондар', 'delivery', 'Нова Пошта, відділення №3, Львів, +380 50 111 22 33, Сергій Бондар', [['p6', 'w1', 1, 230], ['p8', 'w2', 1, 170]], at(6, 14, 20), 'u1', ['FOP_UAH', 16500, at(5, 11, 5)]);
+    mk(121, 'Віктор Шевчук', 'pickup', '', [['p4', 'w1', 2, 35]], at(3, 12, 40), 'u2', ['CASH_USD', 70, at(3, 12, 45)]);
+    mk(122, 'Андрій Мельник', 'pickup', '', [['p10', 'w1', 1, 32]], at(1, 16, 10), 'u1', ['CASH_UAH', 1300, at(1, 16, 12)]);
+    mk(123, 'Олег Коваль', 'pickup', '', [['p9', 'w2', 1, 100]], at(1, 17, 30), 'u2', null);
+    mk(124, 'Іван Петренко', 'delivery', 'Нова Пошта, відділення №15, Київ, +380 67 123 45 67, Іван Петренко', [['p1', 'w1', 1, 85], ['p2', 'w2', 1, 290], ['p4', 'w1', 2, 35]], at(0, 9, 42), 'u1', null);
     setMeta('next_deal_no', 125);
   }
 

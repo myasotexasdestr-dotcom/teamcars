@@ -169,7 +169,15 @@ function openDatabase(dataDir) {
   db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('next_deal_no', '1')").run();
   db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('version', '1')").run();
   db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema', '1')").run();
+  // міграції: нові колонки для вже існуючих баз
+  const hasCol = (t, c) => db.prepare(`PRAGMA table_info(${t})`).all().some(r => r.name === c);
+  if (!hasCol('products', 'block')) db.exec('ALTER TABLE products ADD COLUMN block INTEGER');
+  if (!hasCol('deals', 'currency')) db.exec("ALTER TABLE deals ADD COLUMN currency TEXT NOT NULL DEFAULT 'UAH'");
+  if (!hasCol('financial_transactions', 'deal_currency')) db.exec('ALTER TABLE financial_transactions ADD COLUMN deal_currency TEXT');
   return db;
 }
 
-module.exports = { openDatabase, loadSecret, ACCOUNTS };
+// Валюта цін товарів і нових угод
+const PRICE_CURRENCY = 'USD';
+
+module.exports = { openDatabase, loadSecret, ACCOUNTS, PRICE_CURRENCY };
