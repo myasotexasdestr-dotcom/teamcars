@@ -3,7 +3,8 @@
 # Мясо (/opt/sklad-server, pm2-процесс «sklad») НЕ изменяется: его файлы только читаются при необходимости.
 #
 # Запуск на сервере (код берётся с raw.githubusercontent.com — работает на IPv6-only VPS, репозиторий должен быть публичным):
-#   curl -fsSL https://raw.githubusercontent.com/ЛОГИН/teamcars/refs/heads/main/install.sh | bash -s ЛОГИН/teamcars
+#   curl -fsSL https://raw.githubusercontent.com/ЛОГИН/teamcars/refs/tags/v9/install.sh | bash -s ЛОГИН/teamcars v9
+#   (v9 — номер версії; без нього береться гілка main, яку GitHub кешує кілька хвилин)
 #
 # Повторный запуск безопасен: обновляет код, базу и .env не трогает.
 set -euo pipefail
@@ -17,7 +18,9 @@ DATA=/var/lib/teamcars
 CADDYFILE=/opt/caddy/Caddyfile
 CADDY=/usr/local/bin/caddy
 MEAT=/opt/sklad-server
-BASE="${BASE_URL:-https://raw.githubusercontent.com/$REPO/refs/heads/$REF}"
+# Версія-тег (v9, v10…) — незмінна адреса, без кешу GitHub; інакше — гілка (main)
+if [[ "$REF" =~ ^v[0-9]+$ ]]; then REFPATH="refs/tags/$REF"; else REFPATH="refs/heads/$REF"; fi
+BASE="${BASE_URL:-https://raw.githubusercontent.com/$REPO/$REFPATH}"
 
 say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m    ✓ %s\033[0m\n' "$*"; }
@@ -109,6 +112,7 @@ else
   pm2 restart caddy >/dev/null && ok "caddy перезапущен"
 fi
 
+printf '\nВстановлено версію: %s\n' "$REF"
 printf '\n\033[1;32mГотово.\033[0m Через 1–2 минуты (выпуск сертификата) откройте https://%s\n' "$DOMAIN"
 printf 'Проверка мяса: https://app.myasotexasy.com.ua — должно работать как раньше.\n'
 printf 'Логи: pm2 logs teamcars    Сертификат: pm2 logs caddy --lines 30 --nostream\n\n'
