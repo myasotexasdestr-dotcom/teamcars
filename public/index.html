@@ -39,16 +39,18 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .shell{max-width:520px;margin:0 auto;padding:16px 16px calc(112px + env(safe-area-inset-bottom,0px))}
 .no-nav .shell{padding-bottom:calc(112px + env(safe-area-inset-bottom,0px))}
 .main{display:flex;flex-direction:column;gap:12px;min-width:0}
-.nav{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(488px,calc(100% - 32px));height:68px;padding:8px;background:var(--card);border-radius:34px;box-shadow:var(--shadow-lg);display:flex;gap:4px}
+.nav{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(488px,calc(100% - 32px));height:68px;padding:8px 6px;background:var(--card);border-radius:34px;box-shadow:var(--shadow-lg);display:flex;gap:2px}
 .nav .brand,.nav .me{display:none}
-.nav-item{flex:1 1 0;min-width:0;height:52px;border-radius:26px;border:0;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px;font-weight:700;white-space:nowrap;position:relative}
-.nav-item.on{flex:1.6 1 0;background:var(--ink);color:var(--on-ink)}
+.nav-item{flex:1 1 0;min-width:0;height:52px;border-radius:26px;border:0;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:9.5px;font-weight:700;letter-spacing:-.1px;white-space:nowrap;position:relative;overflow:hidden;text-overflow:ellipsis;padding:0}
+.nav-item.on{flex:1.15 1 0;background:var(--ink);color:var(--on-ink)}
 .nav-item .badge{position:absolute;top:4px;right:calc(50% - 22px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--on-accent);font-size:10px;display:flex;align-items:center;justify-content:center}
 .no-nav .nav{display:none}
+.nav .lbl-full{display:none}
 @media (min-width:960px){
   body{background-attachment:fixed}
   .shell,.no-nav .shell{max-width:1240px;display:grid;grid-template-columns:232px minmax(0,1fr);gap:28px;padding:24px 32px 40px}
   .nav,.no-nav .nav{display:flex;position:sticky;top:24px;left:auto;transform:none;bottom:auto;width:auto;height:calc(100vh - 48px);flex-direction:column;border-radius:28px;padding:20px 14px;align-self:start;gap:4px}
+  .nav .lbl-full{display:inline}.nav .lbl-short{display:none}
   .nav .brand{display:flex;align-items:center;gap:10px;padding:0 8px 20px;font-size:17px;font-weight:800}
   .nav .me{display:flex;margin-top:auto;border-top:1px solid var(--line);padding:14px 8px 0;gap:10px;align-items:center}
   .nav-item,.nav-item.on{flex:0 0 48px;flex-direction:row;justify-content:flex-start;padding:0 16px;gap:12px;font-size:14px}
@@ -268,7 +270,8 @@ const ICONS={
   part:'M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M12 3.5v3 M12 17.5v3 M3.5 12h3 M17.5 12h3',
   crypto:'M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 8v8 M9 10.5h6',
   fop:'M4 21V9l8-5 8 5v12 M9 21v-6h6v6',
-  reset:'M4 12a8 8 0 1 0 2.3-5.6 M4 4v4h4'
+  reset:'M4 12a8 8 0 1 0 2.3-5.6 M4 4v4h4',
+  invest:'M4 19h16 M6 15l4-4 3 3 5-6 M15 8h3v3'
 };
 const icon=(n,s=20,w=1.8)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
 
@@ -289,7 +292,7 @@ const BLOCKS=Array.from({length:20},(_,i)=>i+1);
 const ROLES={admin:'Адмін',owner:'Власник'};
 const isAdmin=()=>ME&&ME.role==='admin';
 const INV_TYPES={receipt:'Прихід',sale:'Продаж',adjustment:'Корекція',transfer:'Переміщення',return:'Повернення'};
-const FIN_TYPES={opening:'Початковий залишок',sale:'Оплата угоди',expense:'Списання',deposit:'Внесення',transfer:'Переказ',return:'Повернення',adjustment:'Корекція'};
+const FIN_TYPES={opening:'Початковий залишок',sale:'Оплата угоди',expense:'Списання',deposit:'Внесення',investment:'Інвестиція',repayment:'Погашення інвестиції',transfer:'Переказ',return:'Повернення',adjustment:'Корекція'};
 
 let DB=null, ME=null;
 
@@ -340,8 +343,8 @@ async function poll(){
 const errMsg=e=>e&&e.message?e.message:'Щось пішло не так';
 
 /* ---------- UI state & routing ---------- */
-const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',draft:null,form:null,sheet:null,photoIdx:0};
-const TOP=['home','deals','stock','settings'];
+const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
+const TOP=['home','deals','stock','invest','settings'];
 function go(name,params={},opts={}){
   if(opts.root) UI.stack=[]; else if(!opts.replace) UI.stack.push(UI.route);
   UI.route={name,params}; UI.sheet=null; render(); window.scrollTo(0,0);
@@ -367,13 +370,13 @@ function closeSheet(){UI.sheet=null;renderSheet()}
 const sheetWrap=(title,body)=>`<div class="backdrop" data-act="closeSheetBg"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="grip"></div><div class="row between gap"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-act="closeSheet" aria-label="Закрити"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>${body}</div></div>`;
 
 function navHtml(name){
-  const map={deal:'deals',newDeal:'deals',product:'stock',productForm:'stock',invLog:'settings',finLog:'settings',expLog:'home'};
+  const map={deal:'deals',newDeal:'deals',product:'stock',productForm:'stock',invLog:'settings',finLog:'settings',expLog:'home',investLog:'invest'};
   const act=map[name]||name;
   const newCnt=DB.deals.filter(d=>d.status==='new').length;
-  const items=[['home','Головна'],['deals','Угоди'],['stock','Склад'],['settings','Налаштування']];
+  const items=[['home','Головна'],['deals','Угоди'],['stock','Склад'],['invest','Інвестиції'],['settings','Налаштування','Налашт.']];
   return `<nav class="nav" aria-label="Основна навігація">
     <div class="brand"><span class="logo" style="width:40px;height:40px;border-radius:14px;background:var(--ink);box-shadow:none">${icon('part',22)}</span>TeamCars</div>
-    ${items.map(([id,l])=>`<button type="button" class="nav-item ${act===id?'on':''}" data-act="tab" data-v="${id}" ${act===id?'aria-current="page"':''}>${icon(id)}<span>${l}</span>${id==='deals'&&newCnt?`<span class="badge">${newCnt}</span>`:''}</button>`).join('')}
+    ${items.map(([id,l,sh])=>`<button type="button" class="nav-item ${act===id?'on':''}" data-act="tab" data-v="${id}" ${act===id?'aria-current="page"':''}>${icon(id)}${sh?`<span class="lbl-short">${sh}</span><span class="lbl-full">${l}</span>`:`<span>${l}</span>`}${id==='deals'&&newCnt?`<span class="badge">${newCnt}</span>`:''}</button>`).join('')}
     <div class="me"><span class="avatar" style="width:36px;height:36px;font-size:12px">${esc(initials(ME.name))}</span><div class="col grow"><span class="name" style="font-size:13px">${esc(ME.name)}</span><span class="muted xs">${ROLES[ME.role]||''}</span><button type="button" class="link" style="color:var(--danger);text-align:left;font-size:12px;text-decoration:none" data-act="logout">Вийти</button></div></div>
   </nav>`;
 }
@@ -452,6 +455,7 @@ VIEWS.home=()=>{
 function finRow(t){
   const d=t.dealId?deal(t.dealId):null;
   const u=user(t.userId);
+  if(t.type==='investment'||t.type==='repayment'){const inv=t.type==='investment';return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">${inv?'Інвестиція':'Погашення інвестиції'} · ${esc(t.takenBy||'')}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}${t.purpose?' · '+esc(t.purpose):''}</span></div><span class="num" style="font-weight:800;color:${inv?'var(--blue)':'var(--warn)'}">${inv?'+':'−'}${money(Math.abs(t.amount),t.currency)}</span></div>`}
   if(t.type==='deposit') return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">Внесення · ${esc(t.purpose)}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)} · ${esc(t.takenBy||'')}</span></div><span class="num" style="font-weight:800;color:var(--blue)">+${money(Math.abs(t.amount),t.currency)}</span></div>`;
   if(t.type==='opening') return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">Початковий залишок</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}</span></div><span class="num" style="font-weight:800;color:var(--blue)">+${money(Math.abs(t.amount),t.currency)}</span></div>`;
   if(t.type==='expense') return `<div><div class="col grow"><span style="font-size:14px;font-weight:700">Списання · ${esc(t.purpose)}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)} · взяв ${esc(t.takenBy)}</span></div><span class="num" style="font-weight:800;color:var(--warn)">−${money(Math.abs(t.amount),t.currency)}</span></div>`;
@@ -817,6 +821,39 @@ VIEWS.expLog=()=>{
   <div class="grid2 grid-stats">${sums.map(({a,v})=>`<section class="card" style="gap:4px"><span class="muted sm">${a.name}</span><span class="mid num" style="font-size:20px;color:${v?'var(--warn)':'var(--ink)'}">${v?'−':''}${money(v,a.currency)}</span></section>`).join('')}</div>
   <section class="card" style="gap:2px">${list.length?`<div class="lines">${list.map(t=>{const rec=user(t.userId);return `<div style="align-items:flex-start"><div class="col grow" style="gap:2px"><span style="font-size:14px;font-weight:700;white-space:pre-wrap">${esc(t.purpose)}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}</span><span class="muted xs">Взяв: <b style="color:var(--ink2)">${esc(t.takenBy)}</b>${rec&&rec.name!==t.takenBy?` · вніс ${esc(rec.name)}`:''}</span></div><span class="num" style="font-weight:800;color:var(--warn);white-space:nowrap">−${money(Math.abs(t.amount),t.currency)}</span></div>`}).join('')}</div>`:'<div class="empty">Списань ще не було. Натисніть на баланс на головній, щоб списати кошти.</div>'}</section>`;
 };
+/* investments */
+const invOwed=(uid,acc)=>DB.finTx.filter(t=>t.investorUserId===uid&&t.accountId===acc&&(t.type==='investment'||t.type==='repayment')).reduce((s,t)=>s+t.amount,0);
+const investors=()=>DB.users.filter(u=>!u.deleted||DB.finTx.some(t=>t.investorUserId===u.id));
+function invUserId(){const list=investors();if(!list.find(u=>u.id===UI.invUser))UI.invUser=(list.find(u=>u.id===ME.id)||list[0]||{}).id;return UI.invUser}
+VIEWS.invest=()=>{
+  const uid=invUserId(); const u=user(uid);
+  const o=id=>invOwed(uid,id);
+  const any=ACCOUNTS.some(a=>Math.abs(o(a.id))>0.004);
+  return `<header class="top"><div class="col"><h1>Інвестиції</h1><span class="muted sm">Скільки фірма винна інвестору</span></div></header>
+  <section class="card" style="gap:8px"><label for="inv-user" class="lbl">Інвестор</label>
+    <select id="inv-user" class="input select" data-change="invUser">${investors().map(x=>`<option value="${x.id}" ${x.id===uid?'selected':''}>${esc(x.name)}${x.deleted?' (видалений)':!x.active?' (неактивний)':''}</option>`).join('')}</select></section>
+  <div class="grid2 grid-bal">
+    <section class="card bal-kasa" style="padding:18px">
+      <div class="card-head"><div class="row gap" style="gap:8px;color:#3E8FD6">${icon('wallet',18,2)}<h2 style="font-size:18px;color:var(--ink)">Каса</h2></div><span class="muted sm">UAH + USD</span></div>
+      <div class="row" style="gap:18px;align-items:stretch"><div class="col"><span class="big">${money(o('CASH_UAH'))}</span><span class="muted sm">гривня</span></div><span class="vline"></span><div class="col"><span class="big">${money(o('CASH_USD'),'USD')}</span><span class="muted sm">долар</span></div></div>
+    </section>
+    <section class="card"><div class="row" style="gap:6px;color:var(--violet)">${icon('crypto',16,2)}<h2 style="color:var(--ink)">Крипто</h2></div><div class="row" style="gap:4px;align-items:baseline"><span class="mid">${nf(o('CRYPTO_USDT'))}</span><span class="muted sm">USDT</span></div></section>
+    <section class="card"><div class="row" style="gap:6px;color:var(--gold)">${icon('fop',16,2)}<h2 style="color:var(--ink)">ФОП</h2></div><div class="row" style="gap:4px;align-items:baseline"><span class="mid">${nf(o('FOP_UAH'))}</span><span class="muted sm">₴</span></div></section>
+  </div>
+  ${any?'':`<span class="muted xs" style="padding:0 6px;margin-top:-4px">${esc(u?u.name:'')} ще не вносив інвестицій</span>`}
+  <button type="button" class="btn-hero" data-act="investSheet" data-v="in"><span class="plus">${icon('plus',18,2.4)}</span>Внести інвестиції</button>
+  <button type="button" class="btn ghost" style="height:60px;border-radius:30px;font-size:16px" data-act="investSheet" data-v="out" ${any?'':'disabled'}>${icon('check',18,2.2)}Погасити інвестиції</button>
+  <button type="button" class="link" style="align-self:center;padding:10px;font-size:15px" data-act="go" data-v="investLog">Журнал</button>`;
+};
+VIEWS.investLog=()=>{
+  const uid=invUserId(); const u=user(uid);
+  const list=DB.finTx.filter(t=>(t.type==='investment'||t.type==='repayment')&&(UI.invLogAll||t.investorUserId===uid)).sort(byAtDesc);
+  const sums={};list.forEach(t=>{const k=t.currency;sums[k]=sums[k]||{in:0,out:0};if(t.amount>0)sums[k].in+=t.amount;else sums[k].out-=t.amount});
+  return `${subhead('Журнал інвестицій')}
+  <div class="seg glass" role="tablist" aria-label="Фільтр"><button type="button" role="tab" aria-selected="${!UI.invLogAll}" class="${UI.invLogAll?'':'on'}" data-act="invLogAll" data-v="0">${esc(u?u.name:'Інвестор')}</button><button type="button" role="tab" aria-selected="${UI.invLogAll}" class="${UI.invLogAll?'on':''}" data-act="invLogAll" data-v="1">Усі інвестори</button></div>
+  ${Object.keys(sums).length?`<section class="card" style="gap:4px">${Object.entries(sums).map(([c,v])=>`<div class="kv"><span class="muted">${c}</span><b class="num">внесено ${money(v.in,c)} · погашено ${money(v.out,c)}</b></div>`).join('')}</section>`:''}
+  <section class="card" style="gap:2px">${list.length?`<div class="lines">${list.map(t=>{const rec=user(t.userId);const inv=t.type==='investment';return `<div style="align-items:flex-start"><div class="col grow" style="gap:2px"><span style="font-size:14px;font-weight:700">${inv?'Внесено':'Погашено'} · ${esc(t.takenBy||'')}</span><span class="muted xs">${ACC[t.accountId].name} · ${fmtDT(t.at)}${rec?' · вніс у систему '+esc(rec.name):''}</span>${t.purpose?`<span class="muted xs" style="white-space:pre-wrap">${esc(t.purpose)}</span>`:''}</div><span class="num" style="font-weight:800;white-space:nowrap;color:${inv?'var(--blue)':'var(--warn)'}">${inv?'+':'−'}${money(Math.abs(t.amount),t.currency)}</span></div>`}).join('')}</div>`:'<div class="empty">Записів ще немає</div>'}</section>`;
+};
 VIEWS.finLog=()=>`${subhead('Фінансові операції')}
   <div class="grid2 grid-stats">${ACCOUNTS.map(a=>`<section class="card" style="gap:4px"><span class="muted sm">${a.name}</span><span class="mid" style="font-size:20px">${money(balance(a.id),a.currency)}</span></section>`).join('')}</div>
   <section class="card" style="gap:2px"><div class="lines">${[...DB.finTx].sort(byAtDesc).map(finRow).join('')}</div></section>`;
@@ -843,6 +880,16 @@ SHEETS.spend=s=>{const a=ACC[s.acct];const bal=balance(s.acct);const users=DB.us
   <div class="field"><label for="sp-why">${dep?'Звідки / коментар':'На що'}</label><textarea id="sp-why" class="textarea" rows="2" placeholder="${dep?'Напр. початковий залишок, внесок власника':'Напр. оплата доставки, закупівля, зарплата'}" data-input="sheetField" data-f="purpose">${esc(s.purpose)}</textarea></div>
   <div class="err" role="alert">${esc(s.error||'')}</div>
   <div class="row gap"><button type="button" class="btn ghost grow" data-act="closeSheet">Скасувати</button><button type="button" class="btn primary grow2" data-act="spendConfirm">${dep?'Внести':'Списати'}</button></div>`)};
+SHEETS.invest=s=>{const a=ACC[s.acct];const u=user(s.investorId);const dep=s.mode==='in';const owed=invOwed(s.investorId,s.acct);const bal=balance(s.acct);
+  return sheetWrap(dep?'Внести інвестиції':'Погасити інвестиції',`
+  <span class="muted" style="margin-top:-8px">Інвестор: <b style="color:var(--ink)">${esc(u?u.name:'')}</b></span>
+  <div class="tabs" role="radiogroup" aria-label="Рахунок">${ACCOUNTS.map(x=>`<button type="button" role="radio" aria-checked="${x.id===s.acct}" class="tab ${x.id===s.acct?'on':''}" data-act="invAcct" data-v="${x.id}">${x.name}</button>`).join('')}</div>
+  <span class="muted sm" style="margin-top:-4px">${dep?`Зараз на рахунку: <b class="num" style="color:var(--ink)">${money(bal,a.currency)}</b>`:`До погашення: <b class="num" style="color:var(--ink)">${money(owed,a.currency)}</b> · на рахунку: <b class="num" style="color:var(--ink)">${money(bal,a.currency)}</b>`}</span>
+  <div class="field"><label for="iv-amt" class="lbl">Сума</label><div class="amount"><input id="iv-amt" type="text" inputmode="decimal" autocomplete="off" value="${esc(s.amount)}" placeholder="0" data-input="sheetField" data-f="amount" data-autofocus><span>${curSign(a.currency)}</span></div></div>
+  <div class="field"><label for="iv-when">Коли</label><input id="iv-when" class="input" type="datetime-local" value="${esc(s.when)}" data-input="sheetField" data-f="when"></div>
+  <div class="field"><label for="iv-why">Коментар <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="iv-why" class="input" value="${esc(s.purpose)}" placeholder="${dep?'Напр. на закупівлю авто':'Напр. часткове погашення'}" data-input="sheetField" data-f="purpose" autocomplete="off"></div>
+  <div class="err" role="alert">${esc(s.error||'')}</div>
+  <div class="row gap"><button type="button" class="btn ghost grow" data-act="closeSheet">Скасувати</button><button type="button" class="btn primary grow2" data-act="invConfirm">${dep?'Внести':'Погасити'}</button></div>`)};
 SHEETS.addStock=s=>{const p=prod(s.productId);
   return sheetWrap('Додати на склад',`<span class="muted" style="margin-top:-8px">${esc(p.name)}</span>
   <div class="field"><span class="lbl">Склад</span><div class="row wrap" style="gap:8px">${activeWh().map(w=>`<button type="button" class="tab ${s.wid===w.id?'on':''}" aria-pressed="${s.wid===w.id}" data-act="asWh" data-v="${w.id}">${esc(w.name)}${w.isDefault?' ★':''} · ${invQty(p.id,w.id)} шт.</button>`).join('')}</div></div>
@@ -895,6 +942,14 @@ A.payAcct=el=>{const s=UI.sheet,d=deal(s.dealId);s.acct=el.dataset.v;s.amount=pr
 A.payConfirm=async()=>{const s=UI.sheet,d=deal(s.dealId);const h=payHint(s.acct,s.amount,d.total,dcur(d));if(!h.valid)return;
   try{await act('payDeal',{dealId:d.id,accountId:s.acct,amount:h.amt});UI.sheet=null;UI.dealsTab='done';render();toast(`Зараховано ${money(h.amt,ACC[s.acct].currency)} → ${ACC[s.acct].name}`)}catch(e){sheetErr(e)}};
 A.closeSheet=()=>{closeSheet();if(STALE&&canAutoRender())render()};
+A.investSheet=el=>{const uid=invUserId();const out=el.dataset.v==='out';const acct=out?(ACCOUNTS.find(a=>invOwed(uid,a.id)>0.004)||ACCOUNTS[0]).id:'CASH_USD';openSheet({type:'invest',mode:out?'out':'in',investorId:uid,acct,amount:'',when:localDT(new Date()),purpose:'',error:''})};
+A.invAcct=el=>{UI.sheet.acct=el.dataset.v;UI.sheet.error='';renderSheet()};
+A.invLogAll=el=>{UI.invLogAll=el.dataset.v==='1';render()};
+A.invConfirm=async()=>{const s=UI.sheet,a=ACC[s.acct];const err=m=>{s.error=m;renderSheet()};const dep=s.mode==='in';
+  const amt=parseNum(s.amount); if(!(amt>0)) return err('Вкажіть суму більше нуля');
+  if(!dep){const owed=invOwed(s.investorId,s.acct);if(amt>owed+1e-9) return err(`По рахунку ${a.name} до погашення лише ${money(owed,a.currency)}`);const bal=balance(s.acct);if(amt>bal+1e-9) return err(`На рахунку ${a.name} лише ${money(bal,a.currency)}`)}
+  const t=new Date(s.when); if(isNaN(t)) return err('Вкажіть дату й час');
+  try{await act(dep?'invest':'repay',{investorId:s.investorId,accountId:s.acct,amount:amt,at:t.toISOString(),purpose:s.purpose.trim()});UI.sheet=null;render();toast(`${dep?'Внесено':'Погашено'} ${money(amt,a.currency)} · ${a.name}`)}catch(e){sheetErr(e)}};
 A.spendSheet=el=>openSheet({type:'spend',mode:'out',acct:el.dataset.v,amount:'',who:ME.id,whoName:'',when:localDT(new Date()),purpose:'',error:''});
 A.spendMode=el=>{UI.sheet.mode=el.dataset.v;UI.sheet.error='';renderSheet()};
 A.spendAcct=el=>{UI.sheet.acct=el.dataset.v;UI.sheet.error='';renderSheet()};
@@ -986,6 +1041,7 @@ C.ndReceived=el=>{const dr=UI.draft;dr.received=el.checked;patch('#nd-pay',ndPay
 C.pfDefect=el=>{UI.form.defective=el.checked};
 C.pfBlock=el=>{UI.form.block=el.value};
 C.spendWho=el=>{UI.sheet.who=el.value;renderSheet()};
+C.invUser=el=>{UI.invUser=el.value;render()};
 C.whDefaultChk=el=>{UI.sheet.isDefault=el.checked};
 C.pfPhotos=async el=>{const files=Array.from(el.files||[]);if(files.length)toast('Завантажую фото…');for(const f of files){try{UI.form.photos.push(await uploadPhoto(await readImage(f)))}catch(e){toast(e.code?errMsg(e):'Не вдалося прочитати '+f.name)}}el.value='';patch('#pf-photos',pfPhotosHtml());patch('#pf-photo-count',UI.form.photos.length+' фото')};
 

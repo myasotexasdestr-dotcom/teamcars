@@ -70,10 +70,10 @@ function createLogic(db, secret) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(newId('it_'), productId, warehouseId, change, before, after, type, dealId, userId, at);
   }
   function addFin(f) {
-    q(`INSERT INTO financial_transactions (id, account_id, amount, currency, type, deal_id, deal_amount_uah, deal_currency, rate, user_id, at, taken_by, taken_by_user_id, purpose, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    q(`INSERT INTO financial_transactions (id, account_id, amount, currency, type, deal_id, deal_amount_uah, deal_currency, rate, user_id, at, taken_by, taken_by_user_id, purpose, recorded_at, investor_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       newId('ft_'), f.accountId, round2(f.amount), ACC[f.accountId].currency, f.type, f.dealId || null,
-      f.dealAmountUah ?? null, f.dealCurrency || null, f.rate ?? null, f.userId, f.at || nowISO(), f.takenBy || null, f.takenByUserId || null, f.purpose || null, nowISO());
+      f.dealAmountUah ?? null, f.dealCurrency || null, f.rate ?? null, f.userId, f.at || nowISO(), f.takenBy || null, f.takenByUserId || null, f.purpose || null, nowISO(), f.investorUserId || null);
   }
 
   // ---------- validation helpers ----------
@@ -135,6 +135,23 @@ function createLogic(db, secret) {
     const n = whQty(w.id); if (n > 0) return `На складі є товар (${n} шт.). Спершу перемістіть або обнуліть залишки.`;
     const od = openDealsOnWh(w.id); if (od.length) return `З цього складу відвантажують неоплачені угоди: ${od.map(n => '№' + pad(n)).join(', ')}. Спершу закрийте або змініть їх.`;
     return '';
+  }
+  // Борг фірми перед інвестором по конкретному рахунку = внесено − погашено
+  const invested = (uid, acc) => round2(q("SELECT COALESCE(SUM(amount), 0) AS s FROM financial_transactions WHERE investor_user_id = ? AND account_id = ? AND type IN ('investment','repayment')").get(uid, acc).s);
+  function investOp(user, p, sign) {
+    const inv = getUser(str(p.investorId, 64)); if (!inv || inv.deleted) fail('Оберіть інвестора');
+    const a = needAccount(p.accountId);
+    const amount = num(p.amount, 'Сума', { allowZero: false });
+    const at = new Date(p.at || Date.now()); if (isNaN(at)) fail('Невірна дата');
+    if (sign < 0) {
+      const owed = invested(inv.id, a.id);
+      if (amount > owed + 1e-9) fail(`${inv.name}: по рахунку ${a.name} до погашення лише ${owed}`, 409, 'invest');
+      const bal = balance(a.id);
+      if (amount > bal + 1e-9) fail(`На рахунку ${a.name} лише ${bal}`, 409, 'balance');
+    }
+    addFin({ accountId: a.id, amount: sign * amount, type: sign > 0 ? 'investment' : 'repayment', userId: user.id, at: at.toISOString(),
+      takenBy: inv.name, takenByUserId: inv.id, investorUserId: inv.id, purpose: str(p.purpose, 1000) || null });
+    return { amount, account: a.name, investor: inv.name };
   }
   const requireAdmin = user => { if (user.role !== 'admin') fail('Ця дія доступна лише адміну', 403, 'forbidden'); };
 
@@ -246,6 +263,8 @@ function createLogic(db, secret) {
       addFin({ accountId: a.id, amount, type: 'deposit', userId: user.id, at: at.toISOString(), takenBy: user.name, takenByUserId: user.id, purpose });
       return { amount, account: a.name };
     },
+    invest(user, p) { return investOp(user, p, 1); },
+    repay(user, p) { return investOp(user, p, -1); },
     saveUser(user, p) {
       requireAdmin(user);
       const name = str(p.name, 200); if (!name) fail('Вкажіть імʼя');
@@ -362,7 +381,7 @@ function createLogic(db, secret) {
     const finTx = q('SELECT * FROM financial_transactions ORDER BY at').all().map(t => ({
       id: t.id, accountId: t.account_id, amount: t.amount, currency: t.currency, type: t.type, dealId: t.deal_id,
       dealAmountUah: t.deal_amount_uah, dealCurrency: t.deal_currency || (t.deal_id ? 'UAH' : null), rate: t.rate, userId: t.user_id, at: t.at, takenBy: t.taken_by,
-      takenByUserId: t.taken_by_user_id, purpose: t.purpose }));
+      takenByUserId: t.taken_by_user_id, purpose: t.purpose, investorUserId: t.investor_user_id || null }));
     return {
       version: version(),
       me: { id: user.id, name: user.name, role: user.role },

@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS financial_transactions (
   account_id TEXT NOT NULL REFERENCES accounts(id),
   amount REAL NOT NULL,
   currency TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('opening','sale','expense','deposit','transfer','return','adjustment')),
+  type TEXT NOT NULL CHECK (type IN ('opening','sale','expense','deposit','transfer','return','adjustment','investment','repayment')),
   deal_id TEXT,
   deal_amount_uah REAL,
   rate REAL,
@@ -138,7 +138,9 @@ CREATE TABLE IF NOT EXISTS financial_transactions (
   taken_by TEXT,
   taken_by_user_id TEXT,
   purpose TEXT,
-  recorded_at TEXT NOT NULL
+  recorded_at TEXT NOT NULL,
+  deal_currency TEXT,
+  investor_user_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_fintx_account ON financial_transactions(account_id);
 `;
@@ -174,6 +176,21 @@ function openDatabase(dataDir) {
   if (!hasCol('products', 'block')) db.exec('ALTER TABLE products ADD COLUMN block INTEGER');
   if (!hasCol('deals', 'currency')) db.exec("ALTER TABLE deals ADD COLUMN currency TEXT NOT NULL DEFAULT 'UAH'");
   if (!hasCol('financial_transactions', 'deal_currency')) db.exec('ALTER TABLE financial_transactions ADD COLUMN deal_currency TEXT');
+  if (!hasCol('financial_transactions', 'investor_user_id')) db.exec('ALTER TABLE financial_transactions ADD COLUMN investor_user_id TEXT');
+  // Інвестиції: старі бази мають CHECK без 'investment'/'repayment' — перебудовуємо таблицю, дані зберігаються
+  const ftSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'financial_transactions'").get().sql;
+  if (!ftSql.includes("'investment'")) {
+    const cols = db.prepare('PRAGMA table_info(financial_transactions)').all().map(c => c.name).join(', ');
+    const newSql = ftSql.replace("'adjustment')", "'adjustment','investment','repayment')").replace('CREATE TABLE financial_transactions', 'CREATE TABLE financial_transactions_new');
+    db.transaction(() => {
+      db.exec(newSql);
+      db.exec(`INSERT INTO financial_transactions_new (${cols}) SELECT ${cols} FROM financial_transactions`);
+      db.exec('DROP TABLE financial_transactions');
+      db.exec('ALTER TABLE financial_transactions_new RENAME TO financial_transactions');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_fintx_account ON financial_transactions(account_id)');
+    })();
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_fintx_investor ON financial_transactions(investor_user_id)');
   return db;
 }
 
