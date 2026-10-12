@@ -337,7 +337,8 @@ const whQty=wid=>DB.inventory.filter(r=>r.warehouseId===wid&&prod(r.productId)?.
 const reservedQty=(pid,wid)=>DB.deals.filter(d=>d.status==='new').reduce((s,d)=>s+d.items.filter(i=>i.productId===pid&&(!wid||i.warehouseId===wid)&&wh(i.warehouseId)?.active).reduce((a,i)=>a+i.quantity,0),0);
 const origOf=(pid,wid)=>(UI.draft&&UI.draft.orig&&UI.draft.orig[pid+'|'+wid])||0;
 const availFor=i=>invQty(i.productId,i.warehouseId)+origOf(i.productId,i.warehouseId);
-const balance=acc=>DB.finTx.filter(t=>t.accountId===acc).reduce((s,t)=>s+t.amount,0);
+const isInvTx=t=>t.type==='investment'||t.type==='repayment';
+const balance=acc=>DB.finTx.filter(t=>t.accountId===acc&&!isInvTx(t)).reduce((s,t)=>s+t.amount,0);
 
 /* ---------- server ---------- */
 let VERSION=0, BUSY=false, STALE=false;
@@ -447,7 +448,7 @@ VIEWS.home=()=>{
   const inStock=activeProducts().filter(p=>totalQty(p.id)>0);
   const stockValue=inStock.reduce((s,p)=>s+totalQty(p.id)*(Number(p.price)||0),0);
   const noPrice=inStock.filter(p=>!(Number(p.price)>0)).length;
-  const recent=[...DB.finTx].sort(byAtDesc).slice(0,5);
+  const recent=DB.finTx.filter(t=>!isInvTx(t)).sort(byAtDesc).slice(0,5);
   const month=today.toLocaleDateString('uk-UA',{month:'long'});
   return `
   <header class="top"><div class="col"><span class="muted">Вітаємо,</span><h1 style="font-size:22px">${esc(ME.name)}</h1></div>
@@ -855,7 +856,7 @@ VIEWS.invest=()=>{
   const uid=invUserId(); const u=user(uid);
   const o=id=>invOwed(uid,id);
   const any=ACCOUNTS.some(a=>Math.abs(o(a.id))>0.004);
-  return `<header class="top"><div class="col"><h1>Інвестиції</h1><span class="muted sm">Скільки фірма винна інвестору</span></div></header>
+  return `<header class="top"><div class="col"><h1>Інвестиції</h1><span class="muted sm">Окремий облік — каси на головній не змінюються</span></div></header>
   <section class="card" style="gap:8px"><label for="inv-user" class="lbl">Інвестор</label>
     ${ddHtml('invUser','inv-user',investors().map(x=>({v:x.id,l:x.name,ini:initials(x.name),sub:x.deleted?'видалений':!x.active?'неактивний':(x.role==='admin'?'адмін':'власник')})),uid)}</section>
   <div class="grid2 grid-bal">
@@ -882,7 +883,7 @@ VIEWS.investLog=()=>{
 };
 VIEWS.finLog=()=>`${subhead('Фінансові операції')}
   <div class="grid2 grid-stats">${ACCOUNTS.map(a=>`<section class="card" style="gap:4px"><span class="muted sm">${a.name}</span><span class="mid" style="font-size:20px">${money(balance(a.id),a.currency)}</span></section>`).join('')}</div>
-  <section class="card" style="gap:2px"><div class="lines">${[...DB.finTx].sort(byAtDesc).map(finRow).join('')}</div></section>`;
+  <section class="card" style="gap:2px"><div class="lines">${DB.finTx.filter(t=>!isInvTx(t)).sort(byAtDesc).map(finRow).join('')}</div></section>`;
 
 /* ---------- sheets ---------- */
 const SHEETS={};
@@ -906,11 +907,11 @@ SHEETS.spend=s=>{const a=ACC[s.acct];const bal=balance(s.acct);const users=DB.us
   <div class="field"><label for="sp-why">${dep?'Звідки / коментар':'На що'}</label><textarea id="sp-why" class="textarea" rows="2" placeholder="${dep?'Напр. початковий залишок, внесок власника':'Напр. оплата доставки, закупівля, зарплата'}" data-input="sheetField" data-f="purpose">${esc(s.purpose)}</textarea></div>
   <div class="err" role="alert">${esc(s.error||'')}</div>
   <div class="row gap"><button type="button" class="btn ghost grow" data-act="closeSheet">Скасувати</button><button type="button" class="btn primary grow2" data-act="spendConfirm">${dep?'Внести':'Списати'}</button></div>`)};
-SHEETS.invest=s=>{const a=ACC[s.acct];const u=user(s.investorId);const dep=s.mode==='in';const owed=invOwed(s.investorId,s.acct);const bal=balance(s.acct);
+SHEETS.invest=s=>{const a=ACC[s.acct];const u=user(s.investorId);const dep=s.mode==='in';const owed=invOwed(s.investorId,s.acct);
   return sheetWrap(dep?'Внести інвестиції':'Погасити інвестиції',`
   <span class="muted" style="margin-top:-8px">Інвестор: <b style="color:var(--ink)">${esc(u?u.name:'')}</b></span>
   <div class="tabs" role="radiogroup" aria-label="Рахунок">${ACCOUNTS.map(x=>`<button type="button" role="radio" aria-checked="${x.id===s.acct}" class="tab ${x.id===s.acct?'on':''}" data-act="invAcct" data-v="${x.id}">${x.name}</button>`).join('')}</div>
-  <span class="muted sm" style="margin-top:-4px">${dep?`Зараз на рахунку: <b class="num" style="color:var(--ink)">${money(bal,a.currency)}</b>`:`До погашення: <b class="num" style="color:var(--ink)">${money(owed,a.currency)}</b> · на рахунку: <b class="num" style="color:var(--ink)">${money(bal,a.currency)}</b>`}</span>
+  <span class="muted sm" style="margin-top:-4px">${dep?`Інвестиції інвестора по цьому рахунку: <b class="num" style="color:var(--ink)">${money(owed,a.currency)}</b>`:`До погашення: <b class="num" style="color:var(--ink)">${money(owed,a.currency)}</b>`} · окремо від кас</span>
   <div class="field"><label for="iv-amt" class="lbl">Сума</label><div class="amount"><input id="iv-amt" type="text" inputmode="decimal" autocomplete="off" value="${esc(s.amount)}" placeholder="0" data-input="sheetField" data-f="amount" data-autofocus><span>${curSign(a.currency)}</span></div></div>
   <div class="field"><label for="iv-when">Коли</label><input id="iv-when" class="input" type="datetime-local" value="${esc(s.when)}" data-input="sheetField" data-f="when"></div>
   <div class="field"><label for="iv-why">Коментар <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="iv-why" class="input" value="${esc(s.purpose)}" placeholder="${dep?'Напр. на закупівлю авто':'Напр. часткове погашення'}" data-input="sheetField" data-f="purpose" autocomplete="off"></div>
@@ -973,7 +974,7 @@ A.invAcct=el=>{UI.sheet.acct=el.dataset.v;UI.sheet.error='';renderSheet()};
 A.invLogAll=el=>{UI.invLogAll=el.dataset.v==='1';render()};
 A.invConfirm=async()=>{const s=UI.sheet,a=ACC[s.acct];const err=m=>{s.error=m;renderSheet()};const dep=s.mode==='in';
   const amt=parseNum(s.amount); if(!(amt>0)) return err('Вкажіть суму більше нуля');
-  if(!dep){const owed=invOwed(s.investorId,s.acct);if(amt>owed+1e-9) return err(`По рахунку ${a.name} до погашення лише ${money(owed,a.currency)}`);const bal=balance(s.acct);if(amt>bal+1e-9) return err(`На рахунку ${a.name} лише ${money(bal,a.currency)}`)}
+  if(!dep){const owed=invOwed(s.investorId,s.acct);if(amt>owed+1e-9) return err(`По рахунку ${a.name} до погашення лише ${money(owed,a.currency)}`)}
   const t=new Date(s.when); if(isNaN(t)) return err('Вкажіть дату й час');
   try{await act(dep?'invest':'repay',{investorId:s.investorId,accountId:s.acct,amount:amt,at:t.toISOString(),purpose:s.purpose.trim()});UI.sheet=null;render();toast(`${dep?'Внесено':'Погашено'} ${money(amt,a.currency)} · ${a.name}`)}catch(e){sheetErr(e)}};
 A.spendSheet=el=>openSheet({type:'spend',mode:'out',acct:el.dataset.v,amount:'',who:ME.id,whoName:'',when:localDT(new Date()),purpose:'',error:''});

@@ -51,7 +51,8 @@ function createLogic(db, secret) {
   const getDeal = id => q('SELECT * FROM deals WHERE id = ?').get(id);
   const dealItems = id => q('SELECT * FROM deal_items WHERE deal_id = ? ORDER BY position, id').all(id);
   const qty = (p, w) => q('SELECT quantity FROM inventory WHERE product_id = ? AND warehouse_id = ?').get(p, w)?.quantity || 0;
-  const balance = acc => round2(q('SELECT COALESCE(SUM(amount), 0) AS s FROM financial_transactions WHERE account_id = ?').get(acc).s);
+  // Баланс каси фірми; інвестиції ведуться окремо й сюди не входять
+  const balance = acc => round2(q("SELECT COALESCE(SUM(amount), 0) AS s FROM financial_transactions WHERE account_id = ? AND type NOT IN ('investment','repayment')").get(acc).s);
   const activeAdmins = except => q('SELECT COUNT(*) AS c FROM users WHERE active = 1 AND deleted = 0 AND role = ? AND id != ?').get('admin', except || '').c;
   const whQty = wid => q('SELECT COALESCE(SUM(i.quantity),0) AS s FROM inventory i JOIN products p ON p.id = i.product_id WHERE i.warehouse_id = ? AND p.active = 1').get(wid).s;
   const openDealsOnWh = wid => q("SELECT DISTINCT d.no FROM deals d JOIN deal_items i ON i.deal_id = d.id WHERE d.status = 'new' AND i.warehouse_id = ? ORDER BY d.no").all(wid).map(r => r.no);
@@ -146,8 +147,6 @@ function createLogic(db, secret) {
     if (sign < 0) {
       const owed = invested(inv.id, a.id);
       if (amount > owed + 1e-9) fail(`${inv.name}: по рахунку ${a.name} до погашення лише ${owed}`, 409, 'invest');
-      const bal = balance(a.id);
-      if (amount > bal + 1e-9) fail(`На рахунку ${a.name} лише ${bal}`, 409, 'balance');
     }
     addFin({ accountId: a.id, amount: sign * amount, type: sign > 0 ? 'investment' : 'repayment', userId: user.id, at: at.toISOString(),
       takenBy: inv.name, takenByUserId: inv.id, investorUserId: inv.id, purpose: str(p.purpose, 1000) || null });
