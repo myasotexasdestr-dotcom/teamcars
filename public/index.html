@@ -228,6 +228,12 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .sheet{width:min(520px,100%);max-height:92vh;overflow:auto;background:var(--card);border-radius:30px 30px 0 0;padding:12px 20px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
 @media (min-width:960px){.backdrop{align-items:center}.sheet{border-radius:30px}}
 .sheet h2{font-size:20px;font-weight:700}
+.sheet>*{flex-shrink:0}
+.acc-pick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.acc-pick button{min-height:56px;padding:8px 12px;border-radius:16px;border:1px solid var(--fieldline);background:var(--card);text-align:left;display:flex;flex-direction:column;justify-content:center;gap:2px;color:var(--ink)}
+.acc-pick button b{font-size:14px;font-weight:700}
+.acc-pick button span{font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.acc-pick button.on{border:2px solid var(--ink);background:#f1f6fc}
 .grip{align-self:center;width:40px;height:5px;border-radius:3px;background:var(--fieldline)}
 .toast{position:fixed;z-index:60;left:50%;top:calc(16px + env(safe-area-inset-top,0px));transform:translate(-50%,calc(-100% - 60px));visibility:hidden;transition:transform .25s,visibility .25s;background:var(--ink);color:var(--on-ink);padding:12px 18px;border-radius:18px;font-size:14px;font-weight:700;max-width:calc(100% - 32px);box-shadow:var(--shadow-lg)}
 body.busy{cursor:progress}
@@ -896,7 +902,7 @@ SHEETS.pay=s=>{const d=deal(s.dealId);const cur=dcur(d);const h=payHint(s.acct,s
 SHEETS.spend=s=>{const a=ACC[s.acct];const bal=balance(s.acct);const users=DB.users.filter(u=>u.active);const dep=s.mode==='in';
   return sheetWrap(dep?'Внесення коштів':'Списання коштів',`
   <div class="seg" role="radiogroup" aria-label="Операція"><button type="button" role="radio" aria-checked="${!dep}" class="${dep?'':'on'}" data-act="spendMode" data-v="out">Списати</button><button type="button" role="radio" aria-checked="${dep}" class="${dep?'on':''}" data-act="spendMode" data-v="in">Внести</button></div>
-  <div class="tabs" role="radiogroup" aria-label="Рахунок">${ACCOUNTS.map(x=>`<button type="button" role="radio" aria-checked="${x.id===s.acct}" class="tab ${x.id===s.acct?'on':''}" data-act="spendAcct" data-v="${x.id}">${x.name}</button>`).join('')}</div>
+  <div class="acc-pick" role="radiogroup" aria-label="Рахунок">${ACCOUNTS.map(x=>`<button type="button" role="radio" aria-checked="${x.id===s.acct}" class="${x.id===s.acct?'on':''}" data-act="spendAcct" data-v="${x.id}"><b>${x.name}</b><span>${money(balance(x.id),x.currency)}</span></button>`).join('')}</div>
   <span class="muted" style="margin-top:-4px">${dep?'Зараз на рахунку':'Доступно'}: <b class="num" style="color:var(--ink)">${money(bal,a.currency)}</b></span>
   <div class="field"><label for="sp-amt" class="lbl">Сума</label><div class="amount"><input id="sp-amt" type="text" inputmode="decimal" autocomplete="off" value="${esc(s.amount)}" placeholder="0" data-input="sheetField" data-f="amount" data-autofocus><span>${curSign(a.currency)}</span></div></div>
   ${dep?`<div class="field"><label for="sp-when">Коли</label><input id="sp-when" class="input" type="datetime-local" value="${esc(s.when)}" data-input="sheetField" data-f="when"></div>`:`<div class="grid2">
@@ -910,7 +916,7 @@ SHEETS.spend=s=>{const a=ACC[s.acct];const bal=balance(s.acct);const users=DB.us
 SHEETS.invest=s=>{const a=ACC[s.acct];const u=user(s.investorId);const dep=s.mode==='in';const owed=invOwed(s.investorId,s.acct);
   return sheetWrap(dep?'Внести інвестиції':'Погасити інвестиції',`
   <span class="muted" style="margin-top:-8px">Інвестор: <b style="color:var(--ink)">${esc(u?u.name:'')}</b></span>
-  <div class="tabs" role="radiogroup" aria-label="Рахунок">${ACCOUNTS.map(x=>`<button type="button" role="radio" aria-checked="${x.id===s.acct}" class="tab ${x.id===s.acct?'on':''}" data-act="invAcct" data-v="${x.id}">${x.name}</button>`).join('')}</div>
+  <div class="acc-pick" role="radiogroup" aria-label="Рахунок">${ACCOUNTS.map(x=>`<button type="button" role="radio" aria-checked="${x.id===s.acct}" class="${x.id===s.acct?'on':''}" data-act="invAcct" data-v="${x.id}"><b>${x.name}</b><span>${money(invOwed(s.investorId,x.id),x.currency)}</span></button>`).join('')}</div>
   <span class="muted sm" style="margin-top:-4px">${dep?`Інвестиції інвестора по цьому рахунку: <b class="num" style="color:var(--ink)">${money(owed,a.currency)}</b>`:`До погашення: <b class="num" style="color:var(--ink)">${money(owed,a.currency)}</b>`} · окремо від кас</span>
   <div class="field"><label for="iv-amt" class="lbl">Сума</label><div class="amount"><input id="iv-amt" type="text" inputmode="decimal" autocomplete="off" value="${esc(s.amount)}" placeholder="0" data-input="sheetField" data-f="amount" data-autofocus><span>${curSign(a.currency)}</span></div></div>
   <div class="field"><label for="iv-when">Коли</label><input id="iv-when" class="input" type="datetime-local" value="${esc(s.when)}" data-input="sheetField" data-f="when"></div>
