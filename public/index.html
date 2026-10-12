@@ -187,6 +187,24 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .star{width:44px;height:44px;border-radius:22px;border:0;background:transparent;color:var(--dim);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .star.on{background:var(--gold-bg);color:var(--gold)}
 .dim{opacity:.55}
+/* власний випадний список замість системного <select> */
+.dd{position:relative}
+.dd-btn{display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;font-weight:600;color:var(--ink)}
+.dd-btn .chev{color:var(--muted);transition:transform .15s;flex-shrink:0;transform:rotate(90deg)}
+.dd.open .dd-btn{border-color:var(--ink);background:var(--card)}
+.dd.open .dd-btn .chev{transform:rotate(-90deg)}
+.dd-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;background:var(--card);border-radius:18px;box-shadow:0 16px 40px rgba(20,30,50,.18),0 0 0 1px var(--line);padding:6px;max-height:300px;overflow:auto;overscroll-behavior:contain}
+.dd.open .dd-menu{display:flex;flex-direction:column;gap:2px;animation:ddIn .12s ease-out}
+@keyframes ddIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.dd-opt{display:flex;align-items:center;gap:10px;min-height:46px;padding:6px 12px;border:0;border-radius:12px;background:transparent;font-size:15px;font-weight:600;color:var(--ink);text-align:left;width:100%}
+.dd-opt:hover,.dd-opt:focus-visible{background:var(--soft);outline:none}
+.dd-opt.on{background:var(--blue-bg);color:var(--blue)}
+.dd-opt .ini{width:30px;height:30px;border-radius:15px;background:var(--warn-bg);color:var(--warn);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dd-opt.on .ini{background:var(--card);color:var(--blue)}
+.dd-opt .sub{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted)}
+.dd-opt .tick{margin-left:auto;flex-shrink:0}
+.dd-opt .sub+.tick{margin-left:8px}
+@media (prefers-reduced-motion:reduce){.dd.open .dd-menu{animation:none}}
 .bal-btn{border:0;background:transparent;padding:4px 6px;margin:-4px -6px;border-radius:14px;text-align:left;color:inherit;display:flex;flex-direction:column;cursor:pointer}
 .bal-btn:hover,.card.tap:hover{background:var(--field)}
 .card.tap{border:0;text-align:left;color:inherit;cursor:pointer;width:100%}
@@ -289,6 +307,14 @@ const prefillCur=(accCur,cur)=>accCur===cur||(cur==='USD'&&accCur==='USDT');
 const defaultAcct=cur=>cur==='USD'?'CASH_USD':'CASH_UAH';
 const rateLabel=(rate,accCur,dealCur)=>!rate||accCur===dealCur?'':dealCur==='UAH'?`1 ${accCur} = ${nf(rate)} ₴`:`1 ${dealCur} = ${nf(rate)} ${accCur==='UAH'?'₴':accCur}`;
 const BLOCKS=Array.from({length:20},(_,i)=>i+1);
+/* dd: key — ім'я обробника в DD, opts — [{v,l,ini?,sub?}] */
+const DD={};
+function ddHtml(key,id,opts,value,placeholder){
+  const cur=opts.find(o=>String(o.v)===String(value??''));
+  return `<div class="dd" data-dd="${key}"><button type="button" id="${id}" class="input dd-btn" data-act="ddToggle" aria-haspopup="listbox" aria-expanded="false">${cur&&cur.ini?`<span class="avatar" style="width:28px;height:28px;font-size:11px">${esc(cur.ini)}</span>`:''}<span class="grow dd-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cur?cur.l:placeholder||'Оберіть')}</span>${icon('chevron',16,2.2).replace('<svg','<svg class="chev"')}</button>
+  <div class="dd-menu" role="listbox">${opts.map(o=>{const on=String(o.v)===String(value??'');return `<button type="button" role="option" aria-selected="${on}" class="dd-opt ${on?'on':''}" data-act="ddPick" data-v="${esc(o.v)}">${o.ini?`<span class="ini">${esc(o.ini)}</span>`:''}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.l)}</span>${o.sub?`<span class="sub">${esc(o.sub)}</span>`:''}${on?`<span class="tick">${icon('check',16,2.4)}</span>`:''}</button>`}).join('')}</div></div>`;
+}
+function ddCloseAll(except){document.querySelectorAll('.dd.open').forEach(d=>{if(d!==except){d.classList.remove('open');const b=d.querySelector('.dd-btn');if(b)b.setAttribute('aria-expanded','false')}})}
 const ROLES={admin:'Адмін',owner:'Власник'};
 const isAdmin=()=>ME&&ME.role==='admin';
 const INV_TYPES={receipt:'Прихід',sale:'Продаж',adjustment:'Корекція',transfer:'Переміщення',return:'Повернення'};
@@ -756,7 +782,7 @@ VIEWS.productForm=()=>{
   <section class="card" style="gap:14px">
     <div class="field"><label for="pf-code">Каталожний номер <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="pf-code" class="input" style="font-weight:700;letter-spacing:.3px" value="${esc(f.code)}" placeholder="Напр. 8K0407253F" data-input="pf" data-f="code" autocomplete="off"></div>
     <div class="field"><label for="pf-name">Назва <span style="color:var(--danger)">*</span></label><input id="pf-name" class="input" value="${esc(f.name)}" placeholder="Назва запчастини" data-input="pf" data-f="name" autocomplete="off" required></div>
-    <div class="field"><label for="pf-block">Розташування на складі</label><select id="pf-block" class="input select" data-change="pfBlock"><option value="" ${f.block?'':'selected'}>Не вказано</option>${BLOCKS.map(n=>`<option value="${n}" ${String(f.block)===String(n)?'selected':''}>Блок ${n}</option>`).join('')}</select></div>
+    <div class="field"><label for="pf-block">Розташування на складі</label>${ddHtml('pfBlock','pf-block',[{v:'',l:'Не вказано'},...BLOCKS.map(n=>({v:String(n),l:'Блок '+n}))],f.block||'','Не вказано')}</div>
     <div class="field"><label for="pf-price">Ціна, $</label><input id="pf-price" class="input num" inputmode="decimal" value="${esc(f.price)}" placeholder="0" data-input="pf" data-f="price" autocomplete="off"></div>
   </section>
   <section class="card"><h2>Стан</h2><div class="seg" id="pf-cond" role="radiogroup" aria-label="Стан">${pfCondHtml()}</div>
@@ -831,7 +857,7 @@ VIEWS.invest=()=>{
   const any=ACCOUNTS.some(a=>Math.abs(o(a.id))>0.004);
   return `<header class="top"><div class="col"><h1>Інвестиції</h1><span class="muted sm">Скільки фірма винна інвестору</span></div></header>
   <section class="card" style="gap:8px"><label for="inv-user" class="lbl">Інвестор</label>
-    <select id="inv-user" class="input select" data-change="invUser">${investors().map(x=>`<option value="${x.id}" ${x.id===uid?'selected':''}>${esc(x.name)}${x.deleted?' (видалений)':!x.active?' (неактивний)':''}</option>`).join('')}</select></section>
+    ${ddHtml('invUser','inv-user',investors().map(x=>({v:x.id,l:x.name,ini:initials(x.name),sub:x.deleted?'видалений':!x.active?'неактивний':(x.role==='admin'?'адмін':'власник')})),uid)}</section>
   <div class="grid2 grid-bal">
     <section class="card bal-kasa" style="padding:18px">
       <div class="card-head"><div class="row gap" style="gap:8px;color:#3E8FD6">${icon('wallet',18,2)}<h2 style="font-size:18px;color:var(--ink)">Каса</h2></div><span class="muted sm">UAH + USD</span></div>
@@ -873,7 +899,7 @@ SHEETS.spend=s=>{const a=ACC[s.acct];const bal=balance(s.acct);const users=DB.us
   <span class="muted" style="margin-top:-4px">${dep?'Зараз на рахунку':'Доступно'}: <b class="num" style="color:var(--ink)">${money(bal,a.currency)}</b></span>
   <div class="field"><label for="sp-amt" class="lbl">Сума</label><div class="amount"><input id="sp-amt" type="text" inputmode="decimal" autocomplete="off" value="${esc(s.amount)}" placeholder="0" data-input="sheetField" data-f="amount" data-autofocus><span>${curSign(a.currency)}</span></div></div>
   ${dep?`<div class="field"><label for="sp-when">Коли</label><input id="sp-when" class="input" type="datetime-local" value="${esc(s.when)}" data-input="sheetField" data-f="when"></div>`:`<div class="grid2">
-    <div class="field"><label for="sp-who">Хто взяв</label><select id="sp-who" class="input select" data-change="spendWho">${users.map(u=>`<option value="${u.id}" ${s.who===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}<option value="other" ${s.who==='other'?'selected':''}>Інша людина…</option></select></div>
+    <div class="field"><label for="sp-who">Хто взяв</label>${ddHtml('spendWho','sp-who',[...users.map(u=>({v:u.id,l:u.name,ini:initials(u.name)})),{v:'other',l:'Інша людина…'}],s.who)}</div>
     <div class="field"><label for="sp-when">Коли</label><input id="sp-when" class="input" type="datetime-local" value="${esc(s.when)}" data-input="sheetField" data-f="when"></div>
   </div>
   `}${!dep&&s.who==='other'?`<div class="field"><label for="sp-name">Імʼя</label><input id="sp-name" class="input" value="${esc(s.whoName)}" placeholder="Хто саме взяв кошти" data-input="sheetField" data-f="whoName" autocomplete="off"></div>`:''}
@@ -1041,14 +1067,24 @@ C.ndReceived=el=>{const dr=UI.draft;dr.received=el.checked;patch('#nd-pay',ndPay
 C.pfDefect=el=>{UI.form.defective=el.checked};
 C.pfBlock=el=>{UI.form.block=el.value};
 C.spendWho=el=>{UI.sheet.who=el.value;renderSheet()};
-C.invUser=el=>{UI.invUser=el.value;render()};
+DD.invUser=v=>{UI.invUser=v;render()};
+DD.pfBlock=(v,root)=>{UI.form.block=v;const l=root.querySelector('.dd-label');if(l)l.textContent=v?'Блок '+v:'Не вказано';root.querySelectorAll('.dd-opt').forEach(o=>{const on=o.dataset.v===v;o.classList.toggle('on',on);o.setAttribute('aria-selected',on);const t=o.querySelector('.tick');if(on&&!t)o.insertAdjacentHTML('beforeend',`<span class="tick">${icon('check',16,2.4)}</span>`);if(!on&&t)t.remove()})};
+DD.spendWho=v=>{UI.sheet.who=v;renderSheet()};
+A.ddToggle=el=>{const root=el.closest('.dd');const open=!root.classList.contains('open');ddCloseAll(root);root.classList.toggle('open',open);el.setAttribute('aria-expanded',open);if(open){const on=root.querySelector('.dd-opt.on')||root.querySelector('.dd-opt');if(on){on.scrollIntoView({block:'nearest'});on.focus({preventScroll:true})}}};
+A.ddPick=el=>{const root=el.closest('.dd');ddCloseAll();const fn=DD[root.dataset.dd];if(fn)fn(el.dataset.v,root);const b=root.querySelector('.dd-btn');if(b&&document.body.contains(b))b.focus({preventScroll:true})};
 C.whDefaultChk=el=>{UI.sheet.isDefault=el.checked};
 C.pfPhotos=async el=>{const files=Array.from(el.files||[]);if(files.length)toast('Завантажую фото…');for(const f of files){try{UI.form.photos.push(await uploadPhoto(await readImage(f)))}catch(e){toast(e.code?errMsg(e):'Не вдалося прочитати '+f.name)}}el.value='';patch('#pf-photos',pfPhotosHtml());patch('#pf-photo-count',UI.form.photos.length+' фото')};
 
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el||el.disabled)return;const fn=A[el.dataset.act];if(fn)fn(el,e)});
 document.addEventListener('input',e=>{const el=e.target;const fn=el.dataset&&I[el.dataset.input];if(fn)fn(el)});
 document.addEventListener('change',e=>{const el=e.target;const fn=el.dataset&&C[el.dataset.change];if(fn)fn(el)});
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('.dd'))ddCloseAll()});
 document.addEventListener('keydown',e=>{
+  const openDd=document.querySelector('.dd.open');
+  if(openDd){
+    if(e.key==='Escape'){ddCloseAll();openDd.querySelector('.dd-btn').focus();e.preventDefault();return}
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){const opts=[...openDd.querySelectorAll('.dd-opt')];const i=opts.indexOf(document.activeElement);const n=opts[Math.max(0,Math.min(opts.length-1,(i<0?0:i)+(e.key==='ArrowDown'?1:-1)))];if(n)n.focus();e.preventDefault();return}
+  }
   if(e.key==='Escape'&&UI.sheet){closeSheet();return}
   if(!ME&&UI.booted&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
     if(/^\d$/.test(e.key)&&UI.pin.length<8){UI.pin+=e.key;UI.pinErr='';render()}
