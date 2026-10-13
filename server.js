@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 // --- .env (простий завантажувач, щоб не тягнути dotenv) ---
 const envFile = path.join(__dirname, '.env');
@@ -76,7 +77,10 @@ const clientIp = req => (req.headers['x-real-ip'] || String(req.headers['x-forwa
 
 // --- helpers ---
 function send(res, status, body, headers = {}) {
-  const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  let data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  // стиснення великих JSON-відповідей (знімок бази) — у 5–10 разів менше трафіку
+  const ae = String((res.req && res.req.headers['accept-encoding']) || '');
+  if (data.length > 4096 && /\bgzip\b/.test(ae)) { data = zlib.gzipSync(data, { level: 6 }); headers = { ...headers, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' }; }
   res.writeHead(status, {
     'Content-Type': typeof body === 'object' && !Buffer.isBuffer(body) ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8',
     'Cache-Control': 'no-store',

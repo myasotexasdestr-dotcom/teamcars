@@ -1212,7 +1212,7 @@ VIEWS.settings=()=>{
   </div><div class="stack">
   <section class="card" style="gap:4px"><h2 style="font-size:17px;padding-bottom:6px">Журнали</h2>
     <div class="lines">
-      <div><div class="col grow"><span style="font-weight:700">Рух товару</span><span class="muted sm">${DB.invTx.length} записів</span></div><button type="button" class="btn ghost small" data-act="go" data-v="invLog">Відкрити</button></div>
+      <div><div class="col grow"><span style="font-weight:700">Рух товару</span><span class="muted sm">${DB.invTxTotal||DB.invTx.length} записів</span></div><button type="button" class="btn ghost small" data-act="go" data-v="invLog">Відкрити</button></div>
       <div><div class="col grow"><span style="font-weight:700">Списання коштів</span><span class="muted sm">${DB.finTx.filter(t=>t.type==='expense').length} записів</span></div><button type="button" class="btn ghost small" data-act="go" data-v="expLog">Відкрити</button></div>
       <div><div class="col grow"><span style="font-weight:700">Фінансові операції</span><span class="muted sm">${DB.finTx.length} записів</span></div><button type="button" class="btn ghost small" data-act="go" data-v="finLog">Відкрити</button></div>
     </div></section>

@@ -36,8 +36,8 @@ fi
 ok "порт $PORT свободен (или уже занят самим teamcars)"
 
 say "2/6 Загрузка кода в $DEST"
-FILES="server.js package.json ecosystem.config.cjs src/db.js src/logic.js src/sqlite.js public/index.html"
-OPTIONAL="templates/mazda-cx50.json scripts/backup.js scripts/reset-pin.js README.md install.sh docs/TZ.md"
+FILES="server.js package.json ecosystem.config.cjs src/db.js src/logic.js src/sqlite.js public/index.html scripts/backup.js"
+OPTIONAL="templates/mazda-cx50.json scripts/reset-pin.js README.md install.sh docs/TZ.md"
 mkdir -p "$DEST"/{src,public,scripts,docs,templates} "$DATA"
 TMP=$(mktemp -d)
 for f in $FILES $OPTIONAL; do
@@ -86,6 +86,9 @@ fi
 
 say "5/6 Запуск в pm2 (процесс «teamcars»; «sklad» не трогаем)"
 if pm2 describe teamcars >/dev/null 2>&1; then pm2 restart teamcars --update-env >/dev/null; else pm2 start "$DEST/ecosystem.config.cjs" >/dev/null; fi
+if [ -f "$DEST/scripts/backup.js" ] && ! pm2 describe teamcars-backup >/dev/null 2>&1; then
+  pm2 start "$DEST/scripts/backup.js" --name teamcars-backup --cron-restart "20 3 * * *" --no-autorestart >/dev/null && ok "щоденна резервна копія: 03:20 → $DATA/backups"
+fi
 pm2 save >/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || die "teamcars не отвечает. Пришлите Claude: pm2 logs teamcars --lines 30 --nostream"

@@ -549,7 +549,10 @@ function createLogic(db, secret) {
     try { templates = fs.readdirSync(TEMPLATES_DIR).filter(f => /^[a-z0-9-]+\.json$/.test(f)).map(f => f.slice(0, -5)); } catch (e) { /* немає папки */ }
     const inventory = q('SELECT product_id, warehouse_id, quantity FROM inventory').all()
       .map(r => ({ productId: r.product_id, warehouseId: r.warehouse_id, quantity: r.quantity }));
-    const invTx = q('SELECT * FROM inventory_transactions ORDER BY at').all().map(t => ({
+    // Журнал руху товару росте швидко — у знімок ідуть останні 500 записів і по 12 останніх для кожного товару
+    const invTxTotal = q('SELECT COUNT(*) AS c FROM inventory_transactions').get().c;
+    const invTx = q(`SELECT * FROM (SELECT t.*, t.rowid AS rid, ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY at DESC, t.rowid DESC) AS rn, ROW_NUMBER() OVER (ORDER BY at DESC, t.rowid DESC) AS gn FROM inventory_transactions t)
+      WHERE rn <= 12 OR gn <= 500 ORDER BY at, rid`).all().map(t => ({
       id: t.id, productId: t.product_id, warehouseId: t.warehouse_id, change: t.change, before: t.before_qty, after: t.after_qty,
       type: t.type, dealId: t.deal_id, userId: t.user_id, at: t.at }));
     const itemsBy = {};
@@ -571,7 +574,7 @@ function createLogic(db, secret) {
     return {
       version: version(),
       me: { id: user.id, name: user.name, role: user.role },
-      data: { invChecks: Object.fromEntries(q("SELECT key, value FROM meta WHERE key LIKE 'inv:%'").all().map(r => [r.key.slice(4), JSON.parse(r.value)])), users, warehouses, donors, templates: templateInfo(templates), products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
+      data: { invTxTotal, invChecks: Object.fromEntries(q("SELECT key, value FROM meta WHERE key LIKE 'inv:%'").all().map(r => [r.key.slice(4), JSON.parse(r.value)])), users, warehouses, donors, templates: templateInfo(templates), products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
     };
   }
 
