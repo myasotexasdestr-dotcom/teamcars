@@ -463,7 +463,7 @@ async function poll(){
 const errMsg=e=>e&&e.message?e.message:'Щось пішло не так';
 
 /* ---------- UI state & routing ---------- */
-const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',stAvail:'in',stDonor:'all',stGroup:'',stSub:'',stLimit:60,prodTab:'specs',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
+const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',repPeriod:'month',stAvail:'in',stDonor:'all',stGroup:'',stSub:'',stLimit:60,prodTab:'specs',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
 const TOP=['home','deals','stock','invest','settings'];
 function go(name,params={},opts={}){
   if(opts.root) UI.stack=[]; else if(!opts.replace) UI.stack.push(UI.route);
@@ -566,6 +566,10 @@ VIEWS.home=()=>{
     <section class="card" style="gap:6px"><h3 class="sm" style="color:var(--ink2)">Продажі за місяць</h3><span class="mid">${sum(dM)}</span><span class="muted xs">${esc(month)}</span></section>
     <button type="button" class="card" style="gap:6px;border:0;text-align:left" data-act="tab" data-v="deals"><div class="row between" style="width:100%"><h3 class="sm" style="color:var(--ink2)">Угод за місяць</h3>${newCnt?`<span class="chip warn">${newCnt} нов${plural(newCnt,'а','і','их')}</span>`:''}</div><span class="mid">${dM.length}</span><span class="muted xs">усього ${live.length}</span></button>
     <button type="button" class="card" style="gap:6px;border:0;text-align:left" data-act="tab" data-v="stock"><h3 class="sm" style="color:var(--ink2)">Товарів на складі</h3><span class="mid">${units} шт.</span><span class="muted xs">${activeWh().length} ${plural(activeWh().length,'склад','склади','складів')}</span></button>
+  </div>
+  <div class="grid2">
+    <button type="button" class="card tap" style="gap:4px" data-act="go" data-v="report"><div class="row" style="gap:8px;color:var(--blue)">${icon('logs',18,2)}<h2 style="color:var(--ink)">Звіт</h2></div><span class="muted xs">Продажі, повернення, списання за період</span></button>
+    <button type="button" class="card tap" style="gap:4px" data-act="go" data-v="donors"><div class="row" style="gap:8px;color:var(--accent)">${icon('part',18,2)}<h2 style="color:var(--ink)">Донори</h2></div><span class="muted xs">${(DB.donors||[]).length} ${plural((DB.donors||[]).length,'авто','авто','авто')} · окупність</span></button>
   </div>
   <section class="card">
     <div class="card-head"><h2>Останні операції</h2><button type="button" class="link sm" data-act="go" data-v="finLog">Увесь журнал</button></div>
@@ -891,7 +895,7 @@ VIEWS.product=({id})=>{
   <div class="split"><div class="stack">
   <section class="card" style="padding:12px;gap:14px">
     <div class="photo-main">${photos.length?`<img src="${photos[idx]}" alt="${esc(p.name)}"><span class="chip dark count">${idx+1} / ${photos.length}</span>`:p.exImg?`<img src="${esc(p.exImg)}" alt="Приклад: ${esc(p.name)}" referrerpolicy="no-referrer" onerror="if(this.nextElementSibling)this.nextElementSibling.remove();this.remove()"><span class="ex-badge">Приклад</span>`:`<div class="col" style="align-items:center;gap:6px;font-size:13px">${icon('photo',40,1.3)}Фото ще немає</div>`}</div>
-    ${p.active?`<div class="row between" style="gap:8px;padding:0 4px;flex-wrap:wrap"><label class="btn accent small" for="snap-file" style="cursor:pointer">${icon('photo',16,2)}Сфотографувати<input id="snap-file" type="file" accept="image/*" capture="environment" multiple class="vh" data-change="snapPhotos" data-id="${p.id}"></label></div>`:''}
+    ${p.active?`<div class="row between" style="gap:8px;padding:0 4px;flex-wrap:wrap"><label class="btn accent small" for="snap-file" style="cursor:pointer">${icon('photo',16,2)}Сфотографувати<input id="snap-file" type="file" accept="image/*" capture="environment" multiple class="vh" data-change="snapPhotos" data-id="${p.id}"></label><button type="button" class="btn ghost small" data-act="shareProduct" data-id="${p.id}">Поділитися</button></div>`:''}
     ${photos.length>1?`<div class="thumbs">${photos.map((ph,i)=>`<button type="button" class="${i===idx?'on':''}" data-act="photoIdx" data-v="${i}" aria-label="Фото ${i+1}"><img src="${ph}" alt=""></button>`).join('')}</div>`:''}
     <div class="col" style="gap:6px;padding:0 6px">
       <span class="code ${p.catalogNumber?'':'none'}" style="font-size:13px">${esc(p.catalogNumber||'Без номера деталі')} <span style="color:var(--dim);font-weight:600">· Арт. ${artNo(p)}</span></span>
@@ -950,6 +954,52 @@ function dealReturnsHtml(d){
   return `<section class="card" style="gap:2px"><div class="card-head" style="padding-bottom:6px"><h2>Повернення</h2><span class="muted sm">${rs.reduce((s,r)=>s+r.quantity,0)} шт. · ${money(rs.reduce((s,r)=>s+r.value,0),cur)}</span></div>
   <div class="lines">${rs.map(r=>{const p=prod(r.productId);return `<div><div class="col grow"><span style="font-size:13px;font-weight:700">${esc(p?p.name:'—')}</span><span class="muted xs">${fmtDT(r.at)} · ${esc((user(r.userId)||{}).name||'—')} · ${esc((wh(r.warehouseId)||{}).name||'—')}${r.reason?' · '+esc(r.reason):''}${r.refund?` · повернуто ${money(r.refund,ACC[r.accountId].currency)} з ${esc(ACC[r.accountId].name)}`:''}</span></div><b class="num">${r.quantity} шт.</b></div>`}).join('')}</div></section>`;
 }
+/* report */
+const PERIODS=[['today','Сьогодні'],['week','7 днів'],['month','Цей місяць'],['prev','Минулий місяць'],['year','Цей рік'],['all','Усе']];
+function periodRange(k){const n=new Date();const d0=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  if(k==='today')return [d0,null];if(k==='week')return [new Date(d0-6*864e5),null];if(k==='month')return [new Date(n.getFullYear(),n.getMonth(),1),null];
+  if(k==='prev')return [new Date(n.getFullYear(),n.getMonth()-1,1),new Date(n.getFullYear(),n.getMonth(),1)];if(k==='year')return [new Date(n.getFullYear(),0,1),null];return [null,null]}
+const addCur=(o,c,v)=>{o[c]=(o[c]||0)+v};
+VIEWS.report=()=>{
+  const [from,to]=periodRange(UI.repPeriod);const inR=iso=>{const t=new Date(iso);return (!from||t>=from)&&(!to||t<to)};
+  const done=DB.deals.filter(d=>d.status==='done'&&d.paidAt&&inR(d.paidAt));
+  const sales={},rets={},net={},byDonor={},byProd={};
+  done.forEach(d=>{const c=dcur(d);addCur(sales,c,d.total);d.items.forEach(i=>{const p=prod(i.productId);const k=p&&p.donorId&&donor(p.donorId)?p.donorId:'none';byDonor[k]=byDonor[k]||{};addCur(byDonor[k],c,i.quantity*i.price);
+    const bp=byProd[i.productId]||(byProd[i.productId]={q:0,v:{}});bp.q+=i.quantity;addCur(bp.v,c,i.quantity*i.price)})});
+  let retUnits=0;DB.deals.forEach(d=>(d.returns||[]).filter(r=>inR(r.at)).forEach(r=>{const c=dcur(d);addCur(rets,c,r.value);retUnits+=r.quantity;const p=prod(r.productId);const k=p&&p.donorId&&donor(p.donorId)?p.donorId:'none';byDonor[k]=byDonor[k]||{};addCur(byDonor[k],c,-r.value)}));
+  [...new Set([...Object.keys(sales),...Object.keys(rets)])].forEach(c=>net[c]=(sales[c]||0)-(rets[c]||0));
+  const ft=DB.finTx.filter(t=>!isInvTx(t)&&inR(t.at));
+  const accRows=ACCOUNTS.map(a=>{const x=ft.filter(t=>t.accountId===a.id);const g=ty=>x.filter(t=>t.type===ty).reduce((s,t)=>s+t.amount,0);return {a,in:g('sale'),ret:g('return'),exp:g('expense'),dep:g('deposit')}}).filter(r=>r.in||r.ret||r.exp||r.dep);
+  const expenses=ft.filter(t=>t.type==='expense').sort(byAtDesc);
+  const pending=DB.deals.filter(d=>d.status==='new');const pendSum={};pending.forEach(d=>addCur(pendSum,dcur(d),dealLeft(d)));
+  const top=Object.entries(byProd).map(([id,v])=>({p:prod(id),...v})).filter(x=>x.p).sort((a,b)=>(b.v.USD||0)+(b.v.UAH||0)/40-((a.v.USD||0)+(a.v.UAH||0)/40)).slice(0,5);
+  const kv=(k,v,c='')=>`<div class="kv"><span class="muted">${k}</span><b class="num" ${c?`style="color:${c}"`:''}>${v}</b></div>`;
+  return `${subhead('Звіт')}
+  <div class="tabs" role="tablist" aria-label="Період">${PERIODS.map(([k,l])=>`<button type="button" role="tab" aria-selected="${UI.repPeriod===k}" class="tab ${UI.repPeriod===k?'on':''}" data-act="repPeriod" data-v="${k}">${l}</button>`).join('')}</div>
+  <div class="split"><div class="stack">
+  <section class="card" style="gap:4px"><h2 style="padding-bottom:6px">Продажі</h2>
+    ${kv('Оплачених угод',done.length)}${kv('Продано на',curSum(sales))}${kv('Повернення',(retUnits?retUnits+' шт. · ':'')+curSum(rets),Object.keys(rets).length?'var(--warn)':'')}${kv('Чистий продаж',curSum(net),'var(--blue)')}
+    ${kv('Неоплачені угоди зараз',pending.length?`${pending.length} · до сплати ${curSum(pendSum)}`:'немає')}</section>
+  <section class="card" style="gap:4px"><h2 style="padding-bottom:6px">Гроші по рахунках</h2>
+    ${accRows.length?accRows.map(r=>`<div class="col" style="gap:2px;padding:8px 0;border-top:1px solid var(--line)"><b style="font-size:14px">${r.a.name}</b><span class="sm muted">${[r.in?'надійшло '+money(r.in,r.a.currency):'',r.dep?'внесено '+money(r.dep,r.a.currency):'',r.ret?'повернуто '+money(-r.ret,r.a.currency):'',r.exp?'списано '+money(-r.exp,r.a.currency):''].filter(Boolean).join(' · ')}</span></div>`).join(''):'<span class="muted sm">Руху коштів за період немає</span>'}</section>
+  </div><div class="stack">
+  <section class="card" style="gap:4px"><h2 style="padding-bottom:6px">Продажі по донорах</h2>
+    ${Object.keys(byDonor).length?Object.entries(byDonor).map(([k,v])=>kv(k==='none'?'Без донора':esc(donorName(donor(k))),curSum(v))).join(''):'<span class="muted sm">Продажів немає</span>'}</section>
+  <section class="card" style="gap:4px"><h2 style="padding-bottom:6px">Топ запчастин</h2>
+    ${top.length?top.map(x=>`<button type="button" class="variant" data-act="openProduct" data-id="${x.p.id}"><span class="col grow" style="min-width:0;gap:1px"><span style="font-size:14px;font-weight:600">${esc(x.p.name)}</span><span class="muted xs">${x.q} шт.</span></span><b class="num">${curSum(x.v)}</b></button>`).join(''):'<span class="muted sm">Продажів немає</span>'}</section>
+  <section class="card" style="gap:2px"><div class="card-head" style="padding-bottom:6px"><h2>Списання</h2><span class="muted sm">${expenses.length}</span></div>
+    <div class="lines">${expenses.slice(0,30).map(finRow).join('')||'<div class="empty">Списань немає</div>'}</div></section>
+  </div></div>`;
+};
+VIEWS.donors=()=>{
+  const ds=DB.donors||[];
+  return `${subhead('Донори',`<button type="button" class="round" data-act="donorEdit" aria-label="Додати донора">${icon('plus',18,2.2)}</button>`)}
+  ${ds.length?ds.map(d=>{const st=donorStats(d);const sold=st.sold.USD||0;const pct=d.cost?Math.min(100,Math.round(sold/d.cost*100)):null;const n=activeProducts().filter(p=>p.donorId===d.id).length;
+    return `<section class="card" style="gap:10px"><div class="row between gap"><div class="col" style="min-width:0;gap:2px"><b style="font-size:17px">${esc(donorName(d))}</b><span class="muted sm">${partsWord(n)} · на складі ${st.units} шт.</span></div><button type="button" class="btn ghost small" data-act="stDonorGo" data-v="${d.id}">Склад</button></div>
+    <div class="stat2"><div><span>Вартість</span><b class="num">${d.cost!=null?money(d.cost,PRICE_CUR):'—'}</b></div><div><span>Продано на</span><b class="num">${curSum(st.sold)}</b></div><div><span>Запчастини на складі</span><b class="num">${money(st.stockVal,PRICE_CUR)}</b></div><div><span>Окупність</span><b class="num">${pct==null?'—':pct+'%'}</b></div></div>
+    ${pct!=null?`<span class="bar"><i style="width:${pct}%"></i></span>`:''}</section>`}).join(''):'<div class="empty">Донорів ще немає. Додайте першого кнопкою «+».</div>'}`;
+};
+
 /* donor supply */
 function supplyResultsHtml(){
   const sp=UI.supply;const toks=sp.q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1281,6 +1331,15 @@ A.stSub=el=>{UI.stSub=el.dataset.v;UI.stLimit=60;stRefresh();window.scrollTo(0,0
 A.stMore=()=>{UI.stLimit+=60;patch('#wh-list',whListHtml())};
 A.stReset=()=>{UI.stAvail='in';UI.stDonor='all';UI.stGroup='';UI.stSub='';UI.whTab='all';UI.stLimit=60;stRefresh()};
 A.prodTab=el=>{UI.prodTab=el.dataset.v;render()};
+A.repPeriod=el=>{UI.repPeriod=el.dataset.v;render()};
+A.shareProduct=async el=>{const p=prod(el.dataset.id);
+  const text=[p.name,p.catalogNumber?'Номер: '+p.catalogNumber:'','Стан: '+STATE_L[pState(p)],p.price?'Ціна: '+money(p.price,PRICE_CUR):'',totalQty(p.id)>0?'В наявності':''].filter(Boolean).join('\n');
+  try{
+    if(navigator.share){let files=[];
+      if(p.photos&&p.photos.length&&navigator.canShare){try{const bl=await (await fetch(p.photos[0])).blob();const f=new File([bl],'photo.jpg',{type:bl.type||'image/jpeg'});if(navigator.canShare({files:[f]}))files=[f]}catch(e){}}
+      await navigator.share(files.length?{text,files}:{text});return}
+    await navigator.clipboard.writeText(text);toast('Опис скопійовано — вставте в месенджер')
+  }catch(e){if(e&&e.name!=='AbortError')toast('Не вдалося поділитися')}};
 A.quickAdd=async el=>{const p=prod(el.dataset.id);const w=UI.whTab!=='all'&&wh(UI.whTab)?.active?wh(UI.whTab):defaultWh();if(!w)return toast('Немає активного складу');el.disabled=true;
   try{await act('addStock',{productId:p.id,warehouseId:w.id,quantity:1});stRefresh();toast(`+1 шт. · ${p.name.slice(0,40)} → ${w.name} (тепер ${totalQty(p.id)} шт.)`)}catch(e){toast(errMsg(e))}finally{el.disabled=false}};
 A.supplyStart=el=>{UI.supply={donorId:el.dataset.id,wid:(defaultWh()||{}).id,q:'',items:[],error:''};go('supply');setTimeout(()=>{const i=$('#sp-q');if(i)i.focus()},50)};
@@ -1296,7 +1355,7 @@ A.supplySave=async()=>{const sp=UI.supply;const err=m=>{sp.error=m;patch('#sp-er
 A.donorEdit=el=>{const d=el.dataset.id?donor(el.dataset.id):null;openSheet({type:'donor',id:d?d.id:null,cost:d&&d.cost!=null?String(d.cost):'',make:d?d.make:'',model:d?d.model:'',years:d?d.years:'',engine:d?d.engine:'',color:d?d.color:'',vin:d?d.vin:'',notes:d?d.notes:'',error:''})};
 A.donorSave=async()=>{const s=UI.sheet;if(!s.make.trim()){s.error='Вкажіть марку авто';return renderSheet()}
   try{const cost=String(s.cost||'').trim();if(cost&&!(parseNum(cost)>=0)){s.error='Вартість донора має бути числом';return renderSheet()}
-  const r=await act('saveDonor',{id:s.id,cost:cost===''?null:parseNum(cost),make:s.make,model:s.model,years:s.years,engine:s.engine,color:s.color,vin:s.vin,notes:s.notes});UI.sheet=null;if(!s.id){UI.stDonor=r.donorId;UI.stGroup='';UI.stSub=''}render();toast(s.id?'Донора збережено':'Донора додано')}catch(e){sheetErr(e)}};
+  const r=await act('saveDonor',{id:s.id,cost:cost===''?null:parseNum(cost),make:s.make,model:s.model,years:s.years,engine:s.engine,color:s.color,vin:s.vin,notes:s.notes});UI.sheet=null;if(!s.id&&UI.route.name==='stock'){UI.stDonor=r.donorId;UI.stGroup='';UI.stSub=''}render();toast(s.id?'Донора збережено':'Донора додано')}catch(e){sheetErr(e)}};
 A.donorDeleteAsk=()=>{const s=UI.sheet,d=donor(s.id);const n=activeProducts().filter(p=>p.donorId===d.id).length;
   openSheet({type:'confirm',title:'Видалити донора?',text:`«${donorName(d)}» зникне зі списку донорів.${n?` ${partsWord(n)} залишаться на складі без привʼязки до донора.`:''}`,ok:'Видалити',on:'deleteDonor',id:d.id})};
 A.newProduct=()=>startForm(null);
