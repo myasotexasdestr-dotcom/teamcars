@@ -37,8 +37,8 @@ ok "порт $PORT свободен (или уже занят самим teamcar
 
 say "2/6 Загрузка кода в $DEST"
 FILES="server.js package.json ecosystem.config.cjs src/db.js src/logic.js src/sqlite.js public/index.html"
-OPTIONAL="scripts/backup.js scripts/reset-pin.js README.md install.sh docs/TZ.md"
-mkdir -p "$DEST"/{src,public,scripts,docs} "$DATA"
+OPTIONAL="templates/mazda-cx50.json scripts/backup.js scripts/reset-pin.js README.md install.sh docs/TZ.md"
+mkdir -p "$DEST"/{src,public,scripts,docs,templates} "$DATA"
 TMP=$(mktemp -d)
 for f in $FILES $OPTIONAL; do
   mkdir -p "$TMP/$(dirname "$f")"

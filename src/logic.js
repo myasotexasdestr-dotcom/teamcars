@@ -3,7 +3,14 @@
 // або змінюється все (угода + залишки + журнал + гроші), або нічого.
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { ACCOUNTS, PRICE_CURRENCY } = require('./db');
+
+// Групи запчастин (як у каталогах розборок); підкатегорії — вільний текст у межах групи
+const GROUPS = ['doors', 'engine', 'interior', 'wheels', 'body', 'fluids', 'suspension', 'brakes', 'transmission', 'electrics'];
+const STATES = { new: ['new', 0, 0], analog: ['new', 1, 0], used: ['used', 0, 0], defect: ['used', 0, 1] };
+const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
 
 class AppError extends Error {
   constructor(message, status = 400, code = 'bad_request') { super(message); this.status = status; this.code = code; }
@@ -49,6 +56,12 @@ function createLogic(db, secret) {
   const getWh = id => q('SELECT * FROM warehouses WHERE id = ?').get(id);
   const getProduct = id => q('SELECT * FROM products WHERE id = ?').get(id);
   const getDeal = id => q('SELECT * FROM deals WHERE id = ?').get(id);
+  const getDonor = id => q('SELECT * FROM donors WHERE id = ? AND deleted = 0').get(id);
+  function insertProduct(id, cols, fields) {
+    const art = Number(getMeta('next_art') || 1); setMeta('next_art', art + 1);
+    const at = nowISO();
+    q(`INSERT INTO products (id, ${cols}, art, active, created_at, updated_at) VALUES (?, ${cols.split(', ').map(() => '?').join(', ')}, ?, 1, ?, ?)`).run(id, ...fields, art, at, at);
+  }
   const dealItems = id => q('SELECT * FROM deal_items WHERE deal_id = ? ORDER BY position, id').all(id);
   const qty = (p, w) => q('SELECT quantity FROM inventory WHERE product_id = ? AND warehouse_id = ?').get(p, w)?.quantity || 0;
   // Баланс каси фірми; інвестиції ведуться окремо й сюди не входять
@@ -212,19 +225,26 @@ function createLogic(db, secret) {
     saveProduct(user, p) {
       const name = str(p.name, 300); if (!name) fail('Вкажіть назву товару');
       const price = p.price === '' || p.price == null ? 0 : num(p.price, 'Ціна');
-      const condition = p.condition === 'new' ? 'new' : 'used';
+      const market = p.marketPrice === '' || p.marketPrice == null ? null : num(p.marketPrice, 'Ринкова ціна');
+      const st = STATES[p.state] || [p.condition === 'new' ? 'new' : 'used', 0, p.defective ? 1 : 0];
       const photos = (Array.isArray(p.photos) ? p.photos : []).map(String).filter(u => /^\/photos\/[a-z0-9_-]+\.(jpg|png|webp)$/i.test(u)).slice(0, 20);
       const stock = p.stock && typeof p.stock === 'object' ? p.stock : {};
       const bn = p.block === '' || p.block == null ? null : Number(p.block);
       if (bn !== null && !(Number.isInteger(bn) && bn >= 1 && bn <= 20)) fail('Блок має бути від 1 до 20');
-      const fields = [str(p.catalogNumber, 100), name, price, condition, p.defective ? 1 : 0, str(p.notes, 4000), bn];
+      const grp = GROUPS.includes(p.group) ? p.group : '';
+      const sub = grp ? str(p.sub, 100) : '';
+      let donorId = p.donorId ? str(p.donorId, 64) : null;
+      if (donorId && !getDonor(donorId)) fail('Донора не знайдено');
+      const compat = (Array.isArray(p.compat) ? p.compat : String(p.compat ?? '').split(/\r?\n/)).map(x => str(x, 120)).filter(Boolean).slice(0, 50).join('\n');
+      const fields = [str(p.catalogNumber, 100).toUpperCase(), name, price, st[0], st[2], str(p.notes, 4000), bn, donorId, grp, sub, st[1], str(p.manufacturer, 100), market, compat];
+      const cols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat';
       let id = p.id ? str(p.id, 64) : null;
       if (id) {
         const ex = getProduct(id); if (!ex || !ex.active) fail('Товар не знайдено');
-        q('UPDATE products SET catalog_number = ?, name = ?, price = ?, condition = ?, defective = ?, notes = ?, block = ?, updated_at = ? WHERE id = ?').run(...fields, nowISO(), id);
+        q(`UPDATE products SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = ? WHERE id = ?`).run(...fields, nowISO(), id);
       } else {
         id = newId('p_');
-        q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, block, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)').run(id, ...fields, nowISO(), nowISO());
+        insertProduct(id, cols, fields);
       }
       q('DELETE FROM product_photos WHERE product_id = ?').run(id);
       photos.forEach((u, i) => q('INSERT INTO product_photos (product_id, url, position) VALUES (?, ?, ?)').run(id, u, i));
@@ -235,6 +255,47 @@ function createLogic(db, secret) {
         if (diff) changeInv(id, wid, diff, p.id ? 'adjustment' : 'receipt', user.id);
       }
       return { productId: id };
+    },
+    saveDonor(user, p) {
+      const make = str(p.make, 60); if (!make) fail('Вкажіть марку авто');
+      const f = [make, str(p.model, 60), str(p.years, 30), str(p.engine, 60), str(p.color, 40), str(p.vin, 30).toUpperCase(), str(p.notes, 2000)];
+      let id = p.id ? str(p.id, 64) : null;
+      if (id) {
+        if (!getDonor(id)) fail('Донора не знайдено');
+        q('UPDATE donors SET make = ?, model = ?, years = ?, engine = ?, color = ?, vin = ?, notes = ? WHERE id = ?').run(...f, id);
+      } else {
+        id = newId('dn_');
+        q('INSERT INTO donors (id, make, model, years, engine, color, vin, notes, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)').run(id, ...f, nowISO());
+      }
+      return { donorId: id };
+    },
+    deleteDonor(user, p) {
+      const d = getDonor(str(p.id, 64)); if (!d) fail('Донора не знайдено');
+      q('UPDATE donors SET deleted = 1, deleted_at = ?, deleted_by = ? WHERE id = ?').run(nowISO(), user.id, d.id);
+      q('UPDATE products SET donor_id = NULL WHERE donor_id = ?').run(d.id);
+      return { donorId: d.id };
+    },
+    importTemplate(user, p) {
+      const key = str(p.key, 40);
+      if (!/^[a-z0-9-]+$/.test(key)) fail('Шаблон не знайдено');
+      const file = path.join(TEMPLATES_DIR, key + '.json');
+      if (!fs.existsSync(file)) fail('Шаблон не знайдено на сервері');
+      if (q('SELECT id FROM donors WHERE template_key = ? AND deleted = 0').get(key)) fail('Цей шаблон уже додано', 409, 'exists');
+      const t = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const donorId = newId('dn_'), at = nowISO();
+      const dn = t.donor || {};
+      q('INSERT INTO donors (id, make, model, years, engine, color, vin, notes, template_key, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)')
+        .run(donorId, str(dn.make, 60) || 'Авто', str(dn.model, 60), str(dn.years, 30), str(dn.engine, 60), '', '', '', key, at);
+      const cols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat';
+      let n = 0;
+      for (const r of t.parts || []) {
+        const st = STATES[r.c] || STATES.used;
+        insertProduct(newId('p_'), cols, [str(r.o, 100).toUpperCase(), str(r.n, 300), 0, st[0], st[2], '', null, donorId,
+          GROUPS.includes(r.g) ? r.g : '', str(r.s, 100), st[1], str(r.m, 100), Number.isFinite(r.mp) ? round2(r.mp) : null,
+          (Array.isArray(r.cp) ? r.cp : []).map(x => str(x, 120)).filter(Boolean).join('\n')]);
+        n++;
+      }
+      return { donorId, count: n };
     },
     deleteProduct(user, p) {
       const pr = getProduct(str(p.id, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
@@ -361,7 +422,13 @@ function createLogic(db, secret) {
     q('SELECT product_id, url FROM product_photos ORDER BY position, id').all().forEach(r => { (photos[r.product_id] ||= []).push(r.url); });
     const products = q('SELECT * FROM products ORDER BY created_at').all().map(p => ({
       id: p.id, catalogNumber: p.catalog_number, name: p.name, price: p.price, condition: p.condition,
-      defective: b(p.defective), notes: p.notes, block: p.block ?? null, active: b(p.active), photos: photos[p.id] || [] }));
+      defective: b(p.defective), analog: b(p.analog), notes: p.notes, block: p.block ?? null, active: b(p.active), photos: photos[p.id] || [],
+      art: p.art, donorId: p.donor_id || null, group: p.grp || '', sub: p.sub || '', manufacturer: p.manufacturer || '',
+      marketPrice: p.market_price ?? null, compat: p.compat || '' }));
+    const donors = q('SELECT * FROM donors WHERE deleted = 0 ORDER BY created_at').all().map(d => ({
+      id: d.id, make: d.make, model: d.model, years: d.years, engine: d.engine, color: d.color, vin: d.vin, notes: d.notes, templateKey: d.template_key || null }));
+    let templates = [];
+    try { templates = fs.readdirSync(TEMPLATES_DIR).filter(f => /^[a-z0-9-]+\.json$/.test(f)).map(f => f.slice(0, -5)); } catch (e) { /* немає папки */ }
     const inventory = q('SELECT product_id, warehouse_id, quantity FROM inventory').all()
       .map(r => ({ productId: r.product_id, warehouseId: r.warehouse_id, quantity: r.quantity }));
     const invTx = q('SELECT * FROM inventory_transactions ORDER BY at').all().map(t => ({
@@ -384,8 +451,17 @@ function createLogic(db, secret) {
     return {
       version: version(),
       me: { id: user.id, name: user.name, role: user.role },
-      data: { users, warehouses, products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
+      data: { users, warehouses, donors, templates: templateInfo(templates), products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
     };
+  }
+
+  // назва й кількість запчастин шаблону (кеш, файл читається один раз)
+  const tplCache = {};
+  function templateInfo(keys) {
+    return keys.map(k => {
+      if (!tplCache[k]) { try { const t = JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, k + '.json'), 'utf8')); tplCache[k] = { key: k, title: t.title || k, count: (t.parts || []).length }; } catch (e) { tplCache[k] = { key: k, title: k, count: 0 }; } }
+      return tplCache[k];
+    });
   }
 
   // ---------- auth ----------
@@ -423,8 +499,9 @@ function createLogic(db, secret) {
     let n = 0;
     const P = (id, code, name, price, cond, def, notes, stock) => {
       n++;
-      q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, block, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)')
-        .run(id, code, name, price, cond, def ? 1 : 0, notes, (n * 3) % 20 + 1, at(30, 10, n), at(30, 10, n));
+      q('INSERT INTO products (id, catalog_number, name, price, condition, defective, notes, block, art, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)')
+        .run(id, code, name, price, cond, def ? 1 : 0, notes, (n * 3) % 20 + 1, n, at(30, 10, n), at(30, 10, n));
+      setMeta('next_art', n + 1);
       stock.forEach(([w, qn], i) => changeInv(id, w, qn, 'receipt', i % 2 ? 'u2' : 'u1', null, at(24 - i * 2 - n, 10, 15)));
     };
     P('p1', '8K0407253F', 'Ричаг передній Audi A4 B8', 85, 'used', false, 'Знято з авто 2012 р., пробіг 180 тис. км. Сайлентблоки цілі.', [['w1', 3], ['w2', 1]]);

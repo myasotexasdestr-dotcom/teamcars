@@ -141,7 +141,22 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 /* lists */
 .list{display:flex;flex-direction:column;gap:8px}
 .item{background:var(--card);border-radius:22px;box-shadow:0 8px 22px rgba(30,50,80,.05);padding:10px 14px 10px 10px;display:flex;align-items:center;gap:12px;border:0;width:100%;text-align:left;color:var(--ink)}
-.item.out{opacity:.5}
+.item.out{opacity:.62}
+.grp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (min-width:700px){.grp-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.grp{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:11px 14px;border-radius:18px;border:1px solid var(--fieldline);background:rgba(255,255,255,.7);text-align:left;color:var(--ink);min-width:0}
+.grp b{font-size:14px;font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp span{font-size:12px;color:var(--muted);font-weight:600}
+.grp.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)} .grp.on span{color:inherit;opacity:.7}
+.grp:disabled{opacity:.4}
+.seg4{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:24px;background:var(--soft)}
+.seg4 button{height:42px;border:0;border-radius:20px;background:transparent;color:var(--ink2);font-size:14px;font-weight:700}
+.seg4 button.on{background:var(--ink);color:var(--on-ink)}
+.variant{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;width:100%;text-align:left;color:var(--ink)}
+.variant:first-of-type{border-top:0}
+.compat li{padding:8px 0;border-top:1px solid var(--line);font-size:14px;font-weight:600}
+.compat li:first-child{border-top:0}
+.compat{list-style:none;margin:0;padding:0}
 .item.held{opacity:.8}
 .thumb{width:52px;height:52px;border-radius:16px;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--dim);flex-shrink:0;overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover}
@@ -313,6 +328,29 @@ const prefillCur=(accCur,cur)=>accCur===cur||(cur==='USD'&&accCur==='USDT');
 const defaultAcct=cur=>cur==='USD'?'CASH_USD':'CASH_UAH';
 const rateLabel=(rate,accCur,dealCur)=>!rate||accCur===dealCur?'':dealCur==='UAH'?`1 ${accCur} = ${nf(rate)} ₴`:`1 ${dealCur} = ${nf(rate)} ${accCur==='UAH'?'₴':accCur}`;
 const BLOCKS=Array.from({length:20},(_,i)=>i+1);
+/* Структура складу як у каталогах розборок: група → підкатегорія */
+const GROUPS=[
+  {k:'doors',l:'Двері',subs:['Передня ліва','Передня права','Задня ліва','Задня права']},
+  {k:'engine',l:'Двигун',subs:['Двигун і деталі ДВЗ','Кріплення двигуна і КПП','Кришки і захист двигуна','Система впуску','Система випуску','Система запалювання','Кондиціонер','Система охолодження','Паливна система','Електроніка двигуна']},
+  {k:'interior',l:'Салон',subs:['Акустика','Багажник','Безпека / airbag','Дзеркало салону','Мультимедіа','Оздоблення стелі','Оздоблення стійок і прорізів','Педалі','Передня панель','Перемикання передач','Пічка і клімат','Покриття підлоги','Ремені безпеки','Кермо і перемикачі','Сидіння','Центральна консоль']},
+  {k:'wheels',l:'Колеса',subs:['Диски','Шини','Датчики тиску','Запасне колесо','Гайки і болти']},
+  {k:'body',l:'Кузов',subs:['Бампер передній','Бампер задній','Бокові дзеркала','Підкрилки і бризковики','Захист','Капот','Крила і арки','Дах і рейлінги','Кузовне залізо','Лючок бензобака','Пороги і накладки','Омивач і склоочисник','Оптика передня','Оптика задня','Решітка радіатора','Скло лобове / заднє','Двері багажника','Ущільнювачі прорізів']},
+  {k:'fluids',l:'Рідини',subs:['Масла і рідини']},
+  {k:'suspension',l:'Підвіска і кермо',subs:['Кулак, цапфа, маточина','Підрамник','Рульове керування','Важелі','Стабілізатор','Амортизатори і пружини']},
+  {k:'brakes',l:'Гальма',subs:['ABS','Головний гальмівний циліндр','Гальмівні диски','Стоянкове гальмо','Супорти','Гальмівні шланги']},
+  {k:'transmission',l:'Трансмісія',subs:['Коробка передач','Передній міст','Задній міст','Карданний вал']},
+  {k:'electrics',l:'Електрика',subs:['АКБ','Антени','Блок запобіжників','Датчики','Камери','Сигнал','Ключі','Блоки керування','Проводка','Радар','Щиток приладів']}];
+const GROUP=Object.fromEntries(GROUPS.map(g=>[g.k,g]));
+const STATES=[['new','Новий оригінал'],['analog','Новий аналог'],['used','Б/У'],['defect','Б/У дефект']];
+const STATE_L=Object.fromEntries(STATES);
+const pState=p=>p.condition==='new'?(p.analog?'analog':'new'):(p.defective?'defect':'used');
+const stateChip=p=>{const st=pState(p);return `<span class="chip ${st==='defect'?'warn':st==='used'?'':'ok'}">${STATE_L[st]}</span>`};
+const artNo=p=>String(p.art||0).padStart(6,'0');
+const normCode=s=>String(s||'').toUpperCase().replace(/[\s\-.\/]/g,'');
+const donorName=d=>d?[d.make,d.model,d.years].filter(Boolean).join(' '):'';
+const compatList=p=>String(p.compat||'').split('\n').map(x=>x.trim()).filter(Boolean);
+const hay=p=>p._hay||(p._hay=(p.name+' '+(p.catalogNumber||'')+' '+normCode(p.catalogNumber)+' '+(p.manufacturer||'')+' '+artNo(p)+' '+(p.art||'')).toLowerCase());
+const priceOf=p=>Number(p.price)||Number(p.marketPrice)||0;
 /* dd: key — ім'я обробника в DD, opts — [{v,l,ini?,sub?}] */
 const DD={};
 function ddHtml(key,id,opts,value,placeholder){
@@ -332,6 +370,8 @@ const prod=id=>DB.products.find(p=>p.id===id);
 const wh=id=>DB.warehouses.find(w=>w.id===id);
 const user=id=>DB.users.find(u=>u.id===id);
 const deal=id=>DB.deals.find(d=>d.id===id);
+const donor=id=>(DB.donors||[]).find(d=>d.id===id);
+const variantsOf=p=>{const c=normCode(p.catalogNumber);return c?activeProducts().filter(x=>x.id!==p.id&&normCode(x.catalogNumber)===c):[]};
 const activeWh=()=>DB.warehouses.filter(w=>w.active);
 const defaultWh=()=>DB.warehouses.find(w=>w.active&&w.isDefault)||activeWh()[0];
 const activeProducts=()=>DB.products.filter(p=>p.active);
@@ -376,7 +416,7 @@ async function poll(){
 const errMsg=e=>e&&e.message?e.message:'Щось пішло не так';
 
 /* ---------- UI state & routing ---------- */
-const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
+const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',stAvail:'all',stDonor:'all',stGroup:'',stSub:'',stLimit:60,prodTab:'specs',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
 const TOP=['home','deals','stock','invest','settings'];
 function go(name,params={},opts={}){
   if(opts.root) UI.stack=[]; else if(!opts.replace) UI.stack.push(UI.route);
@@ -587,7 +627,7 @@ function ndResultsHtml(){
   const dr=UI.draft; const toks=dr.query.toLowerCase().split(/\s+/).filter(Boolean);
   if(!toks.length) return '<span class="muted sm" style="padding:0 6px">Пошук у базі товарів: назва або каталожний номер</span>';
   const rows=[];
-  activeProducts().filter(p=>toks.every(t=>(p.name+' '+(p.catalogNumber||'')).toLowerCase().includes(t))).sort((a,b)=>a.name.localeCompare(b.name,'uk')).forEach(p=>{
+  activeProducts().filter(p=>toks.every(t=>hay(p).includes(t))).sort((a,b)=>a.name.localeCompare(b.name,'uk')).forEach(p=>{
     const recs=DB.inventory.filter(r=>r.productId===p.id&&wh(r.warehouseId)?.active&&r.quantity+origOf(p.id,r.warehouseId)>0);
     if(!recs.length) rows.push({p,w:null,q:0,r:reservedQty(p.id)});
     recs.forEach(r=>rows.push({p,w:wh(r.warehouseId),q:r.quantity+origOf(p.id,r.warehouseId)}));
@@ -595,7 +635,7 @@ function ndResultsHtml(){
   if(!rows.length) return '<span class="muted sm" style="padding:0 6px">У базі нічого не знайдено</span>';
   return `<div class="res">${rows.slice(0,12).map(({p,w,q,r})=>{
     const inDeal=w&&dr.items.some(i=>i.productId===p.id&&i.warehouseId===w.id);
-    return `<div><div class="col grow"><span class="name" style="white-space:normal">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')}${p.block?' · Блок '+p.block:''} · ${w?esc(w.name)+' · '+q+' шт.':r?'усе в неоплачених угодах':'немає в наявності'}</span><span class="num" style="font-size:13px;font-weight:700">${money(p.price,PRICE_CUR)}</span></div>
+    return `<div><div class="col grow"><span class="name" style="white-space:normal">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')}${p.block?' · Блок '+p.block:''} · ${w?esc(w.name)+' · '+q+' шт.':r?'усе в неоплачених угодах':'немає в наявності'}</span><span class="num" style="font-size:13px;font-weight:700">${p.price?money(p.price,PRICE_CUR):p.marketPrice?'≈ '+money(p.marketPrice,PRICE_CUR)+' ринкова':'без ціни'}</span></div>
     ${!w?(r?'<span class="chip warn">В угоді</span>':'<span class="chip">0 шт.</span>'):inDeal?'<span class="chip ok">В угоді</span>':`<button type="button" class="btn primary small" data-act="ndAdd" data-p="${p.id}" data-w="${w.id}">Додати</button>`}</div>`}).join('')}</div>`;
 }
 function ndItemsHtml(){
@@ -695,29 +735,73 @@ async function ndShip(){
 }
 
 /* stock */
-function whListHtml(){
+function stockMaps(){
+  const ok={};DB.warehouses.forEach(w=>{ok[w.id]=w.active&&(UI.whTab==='all'||w.id===UI.whTab)});
+  const q={},r={},rec={};
+  DB.inventory.forEach(x=>{if(!ok[x.warehouseId])return;rec[x.productId]=1;q[x.productId]=(q[x.productId]||0)+x.quantity});
+  DB.deals.forEach(d=>{if(d.status!=='new')return;d.items.forEach(i=>{if(ok[i.warehouseId])r[i.productId]=(r[i.productId]||0)+i.quantity})});
+  return {q,r,rec};
+}
+/* товари після пошуку, донора, складу й фільтра наявності (без групи) */
+function stPool(m){
   const toks=UI.whQ.toLowerCase().split(/\s+/).filter(Boolean);
-  let list=activeProducts().filter(p=>toks.every(t=>(p.name+' '+(p.catalogNumber||'')).toLowerCase().includes(t)));
-  if(UI.whTab!=='all') list=list.filter(p=>invRec(p.id,UI.whTab));
+  let list=activeProducts().filter(p=>toks.every(t=>hay(p).includes(t)));
+  if(UI.stDonor==='none')list=list.filter(p=>!p.donorId||!donor(p.donorId));
+  else if(UI.stDonor!=='all')list=list.filter(p=>p.donorId===UI.stDonor);
+  if(UI.whTab!=='all')list=list.filter(p=>m.rec[p.id]||m.r[p.id]);
+  return list;
+}
+const stAvailList=(pool,m)=>UI.stAvail==='in'?pool.filter(p=>m.q[p.id]>0):pool;
+function stFiltersHtml(){
+  const m=stockMaps();const pool=stPool(m);const list=stAvailList(pool,m);
+  const inCnt=pool.filter(p=>m.q[p.id]>0).length;
+  const ds=DB.donors||[];const noDonor=activeProducts().some(p=>!p.donorId||!donor(p.donorId));
+  const d=UI.stDonor!=='all'&&UI.stDonor!=='none'?donor(UI.stDonor):null;
+  const gc={};list.forEach(p=>{if(p.group)gc[p.group]=(gc[p.group]||0)+1});
+  const hasGroups=activeProducts().some(p=>p.group);
+  let subs='';
+  if(UI.stGroup&&GROUP[UI.stGroup]){
+    const sc={};list.filter(p=>p.group===UI.stGroup).forEach(p=>{const k=p.sub||'Інше';sc[k]=(sc[k]||0)+1});
+    const order=[...GROUP[UI.stGroup].subs,...Object.keys(sc).filter(k=>!GROUP[UI.stGroup].subs.includes(k)).sort()].filter(k=>sc[k]);
+    subs=`<div class="tabs" role="tablist" aria-label="Підкатегорії">${[['','Усі',gc[UI.stGroup]||0],...order.map(k=>[k,k,sc[k]])].map(([v,l,n])=>`<button type="button" role="tab" aria-selected="${UI.stSub===v}" class="tab ${UI.stSub===v?'on':''}" data-act="stSub" data-v="${esc(v)}">${esc(l)} <span style="opacity:.6">${n}</span></button>`).join('')}</div>`;
+  }
+  return `<div class="seg" role="radiogroup" aria-label="Наявність"><button type="button" role="radio" aria-checked="${UI.stAvail==='all'}" class="${UI.stAvail==='all'?'on':''}" data-act="stAvail" data-v="all">Усі запчастини<span class="cnt">${pool.length}</span></button><button type="button" role="radio" aria-checked="${UI.stAvail==='in'}" class="${UI.stAvail==='in'?'on':''}" data-act="stAvail" data-v="in">В наявності<span class="cnt">${inCnt}</span></button></div>
+  <div class="tabs" role="tablist" aria-label="Донори">${[{id:'all',l:'Усі авто'},...ds.map(x=>({id:x.id,l:donorName(x)})),...(noDonor&&ds.length?[{id:'none',l:'Без донора'}]:[])].map(x=>`<button type="button" role="tab" aria-selected="${UI.stDonor===x.id}" class="tab ${UI.stDonor===x.id?'on':''}" data-act="stDonor" data-v="${x.id}">${esc(x.l)}</button>`).join('')}<button type="button" class="tab" data-act="donorEdit" style="border-style:dashed">+ Донор</button></div>
+  ${d?`<section class="card" style="gap:6px;padding:14px 16px"><div class="row between gap"><div class="col" style="gap:2px;min-width:0"><span class="lbl">Донор</span><b style="font-size:17px">${esc(donorName(d))}</b><span class="muted sm">${esc([d.engine,d.color,d.vin&&'VIN '+d.vin].filter(Boolean).join(' · ')||'Двигун, колір, VIN — не вказано')}</span></div><button type="button" class="round" data-act="donorEdit" data-id="${d.id}" aria-label="Редагувати донора">${icon('edit',18)}</button></div>${d.notes?`<span class="sm" style="color:var(--ink2);white-space:pre-wrap">${esc(d.notes)}</span>`:''}</section>`:''}
+  ${activeWh().length>1?`<div class="tabs" role="tablist" aria-label="Склади">${[{id:'all',name:'Усі склади'},...activeWh()].map(w=>`<button type="button" role="tab" aria-selected="${UI.whTab===w.id}" class="tab ${UI.whTab===w.id?'on':''}" data-act="whTab" data-v="${w.id}">${esc(w.name)}${w.isDefault?' ★':''}</button>`).join('')}</div>`:''}
+  ${hasGroups?`<div class="grp-grid" role="tablist" aria-label="Групи запчастин">${GROUPS.map(g=>{const n=gc[g.k]||0,on=UI.stGroup===g.k;return `<button type="button" role="tab" aria-selected="${on}" class="grp ${on?'on':''}" data-act="stGroup" data-v="${g.k}" ${n||on?'':'disabled'}><b>${esc(g.l)}</b><span>${n} ${plural(n,'запчастина','запчастини','запчастин')}</span></button>`}).join('')}</div>`:''}
+  ${subs}`;
+}
+function whListHtml(){
+  const m=stockMaps();let list=stAvailList(stPool(m),m);
+  if(UI.stGroup)list=list.filter(p=>p.group===UI.stGroup);
+  if(UI.stGroup&&UI.stSub)list=list.filter(p=>(p.sub||'Інше')===UI.stSub);
   list.sort((a,b)=>a.name.localeCompare(b.name,'uk'));
-  const head=`<div class="row between muted sm" style="padding:0 4px"><span>${posWord(list.length)}</span><span>За алфавітом</span></div>`;
+  const filtered=UI.stAvail!=='all'||UI.stDonor!=='all'||UI.stGroup||UI.whTab!=='all';
+  const head=`<div class="row between muted sm" style="padding:0 4px"><span>${posWord(list.length)}</span>${filtered?'<button type="button" class="link sm" data-act="stReset">Скинути фільтри</button>':'<span>За алфавітом</span>'}</div>`;
   const q0=UI.whQ.trim();
   const addBtn=q0?`<button type="button" class="btn primary" style="align-self:center;max-width:100%;white-space:normal;height:auto;min-height:52px;padding:10px 20px" data-act="addFromSearch">${icon('plus',18,2.2)}<span>Додати «${esc(q0.length>40?q0.slice(0,40)+'…':q0)}»</span></button>`:'';
-  if(!list.length) return head+(toks.length?`<div class="card" style="align-items:center;text-align:center;gap:12px;padding:24px 16px"><span style="font-weight:700">Такого товару ще немає на складі</span><span class="muted sm">Додайте його — назву або номер уже підставлено</span>${addBtn}</div>`:'<div class="empty">Тут поки немає товарів</div>');
-  return head+list.map(p=>{const q=UI.whTab==='all'?totalQty(p.id):invQty(p.id,UI.whTab);const r=reservedQty(p.id,UI.whTab==='all'?null:UI.whTab);
+  if(!list.length) return head+(q0?`<div class="card" style="align-items:center;text-align:center;gap:12px;padding:24px 16px"><span style="font-weight:700">${filtered?'З цими фільтрами нічого не знайдено':'Такого товару ще немає на складі'}</span><span class="muted sm">Додайте його — назву або номер уже підставлено</span>${addBtn}</div>`:`<div class="empty">${filtered?'З цими фільтрами нічого немає':'Тут поки немає товарів'}</div>`);
+  const shown=list.slice(0,UI.stLimit);
+  return head+shown.map(p=>{const q=m.q[p.id]||0,r=m.r[p.id]||0;
     const st=q>0?`${q} шт.${r?` · <span style="color:var(--warn)">${r} в угоді</span>`:''}`:r>0?`<span style="color:var(--warn)">В угоді · ${r} шт.</span>`:'Немає в наявності';
+    const pst=pState(p);
     return `<button type="button" class="item ${q>0?'':r>0?'held':'out'}" data-act="openProduct" data-id="${p.id}">
-      <span class="thumb">${p.photos&&p.photos.length?`<img src="${p.photos[0]}" alt="">`:icon('photo',22,1.6)}</span>
-      <span class="col grow" style="gap:2px"><span class="code ${p.catalogNumber?'':'none'}">${esc(p.catalogNumber||'Без каталожного номера')}</span><span class="name">${esc(p.name)}</span>
-      <span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${st}${p.block?` · <span style="color:var(--ink2)">Блок ${p.block}</span>`:''}${p.defective?' · <span style="color:var(--warn)">дефект</span>':''}</span></span>
-      <span class="num" style="font-size:15px;font-weight:700;flex-shrink:0">${money(p.price,PRICE_CUR)}</span></button>`}).join('')+(q0?`<button type="button" class="link" style="align-self:center;padding:12px;font-size:14px" data-act="addFromSearch">Немає потрібного? Додати новий товар</button>`:'');
+      <span class="thumb">${p.photos&&p.photos.length?`<img src="${p.photos[0]}" alt="" loading="lazy">`:icon('photo',22,1.6)}</span>
+      <span class="col grow" style="gap:2px;min-width:0"><span class="code ${p.catalogNumber?'':'none'}">${esc(p.catalogNumber||'Без номера деталі')} <span style="color:var(--dim);font-weight:600">· Арт. ${artNo(p)}</span></span><span class="name">${esc(p.name)}</span>
+      <span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${st}${p.block?` · <span style="color:var(--ink2)">Блок ${p.block}</span>`:''} · <span style="color:${pst==='defect'?'var(--warn)':'var(--ink2)'}">${STATE_L[pst]}</span></span></span>
+      <span class="col" style="align-items:flex-end;gap:0;flex-shrink:0">${p.price?`<span class="num" style="font-size:15px;font-weight:700">${money(p.price,PRICE_CUR)}</span>`:p.marketPrice?`<span class="num muted" style="font-size:14px;font-weight:700">≈ ${money(p.marketPrice,PRICE_CUR)}</span><span class="muted xs">ринкова</span>`:`<span class="muted sm">без ціни</span>`}</span></button>`}).join('')
+    +(list.length>shown.length?`<button type="button" class="btn ghost" style="align-self:center" data-act="stMore">Показати ще ${Math.min(60,list.length-shown.length)} з ${list.length-shown.length}</button>`:'')
+    +(q0?`<button type="button" class="link" style="align-self:center;padding:12px;font-size:14px" data-act="addFromSearch">Немає потрібного? Додати новий товар</button>`:'');
 }
+const stRefresh=()=>{patch('#st-filters',stFiltersHtml());patch('#wh-list',whListHtml())};
 VIEWS.stock=()=>{
   const ps=activeProducts();const units=ps.reduce((s,p)=>s+totalQty(p.id),0);
   if(UI.whTab!=='all'&&!wh(UI.whTab)?.active) UI.whTab='all';
+  if(UI.stDonor!=='all'&&UI.stDonor!=='none'&&!donor(UI.stDonor)) UI.stDonor='all';
   return `<header class="top"><div class="col"><h1>Склад</h1><span class="muted sm">${posWord(ps.length)} · ${units} шт.</span></div><button type="button" class="btn primary small" data-act="newProduct">${icon('plus',16,2.2)}Товар</button></header>
-  <label class="search">${icon('search',18)}<span class="vh">Пошук товару</span><input id="wh-q" type="search" placeholder="Назва або каталожний номер" value="${esc(UI.whQ)}" data-input="whQ" autocomplete="off"></label>
-  <div class="tabs" role="tablist" aria-label="Склади">${[{id:'all',name:'Всі'},...activeWh()].map(w=>`<button type="button" role="tab" aria-selected="${UI.whTab===w.id}" class="tab ${UI.whTab===w.id?'on':''}" data-act="whTab" data-v="${w.id}">${esc(w.name)}${w.isDefault?' ★':''}</button>`).join('')}</div>
+  <label class="search">${icon('search',18)}<span class="vh">Пошук товару</span><input id="wh-q" type="search" placeholder="Назва, номер деталі або артикул" value="${esc(UI.whQ)}" data-input="whQ" autocomplete="off"></label>
+  <div class="col" style="gap:12px" id="st-filters">${stFiltersHtml()}</div>
   <div class="list" id="wh-list">${whListHtml()}</div>`;
 };
 
@@ -735,17 +819,20 @@ VIEWS.product=({id})=>{
     <div class="photo-main">${photos.length?`<img src="${photos[idx]}" alt="${esc(p.name)}"><span class="chip dark count">${idx+1} / ${photos.length}</span>`:`<div class="col" style="align-items:center;gap:6px;font-size:13px">${icon('photo',40,1.3)}Фото ще немає</div>`}</div>
     ${photos.length>1?`<div class="thumbs">${photos.map((ph,i)=>`<button type="button" class="${i===idx?'on':''}" data-act="photoIdx" data-v="${i}" aria-label="Фото ${i+1}"><img src="${ph}" alt=""></button>`).join('')}</div>`:''}
     <div class="col" style="gap:6px;padding:0 6px">
-      <span class="code ${p.catalogNumber?'':'none'}" style="font-size:13px">${esc(p.catalogNumber||'Без каталожного номера')}</span>
+      <span class="code ${p.catalogNumber?'':'none'}" style="font-size:13px">${esc(p.catalogNumber||'Без номера деталі')} <span style="color:var(--dim);font-weight:600">· Арт. ${artNo(p)}</span></span>
       <h2 style="font-size:22px">${esc(p.name)}</h2>
-      <div class="row wrap" style="gap:6px">${p.block?`<span class="chip dark">Блок ${p.block}</span>`:''}<span class="chip">${p.condition==='new'?'Новий':'БУ'}</span>${p.defective?'<span class="chip warn">З дефектом</span>':'<span class="chip ok">Без дефекту</span>'}${p.active?'':'<span class="chip dark">Видалено</span>'}</div>
+      <div class="row wrap" style="gap:6px">${p.block?`<span class="chip dark">Блок ${p.block}</span>`:''}${stateChip(p)}${p.active?'':'<span class="chip dark">Видалено</span>'}</div>
     </div>
-    <div class="row between" style="padding:0 6px 6px;align-items:baseline"><span class="muted">Ціна</span><span class="num" style="font-size:30px;font-weight:300">${money(p.price,PRICE_CUR)}</span></div>
+    <div class="row between" style="padding:0 6px ${p.marketPrice?'0':'6px'};align-items:baseline"><span class="muted">Ціна</span><span class="num" style="font-size:30px;font-weight:300">${p.price?money(p.price,PRICE_CUR):'<span class="muted" style="font-size:18px">не вказана</span>'}</span></div>
+    ${p.marketPrice?`<div class="row between" style="padding:0 6px 6px"><span class="muted sm">Ринкова ціна</span><span class="num sm" style="font-weight:700;color:var(--ink2)">≈ ${money(p.marketPrice,PRICE_CUR)}</span></div>`:''}
   </section>
-  ${p.notes?`<section class="card" style="gap:6px"><h2>Нотатка</h2><p style="margin:0;line-height:1.45;color:var(--ink2);white-space:pre-wrap">${esc(p.notes)}</p></section>`:''}
+  ${prodInfoHtml(p)}
+  ${p.notes?`<section class="card" style="gap:6px"><h2>Опис</h2><p style="margin:0;line-height:1.45;color:var(--ink2);white-space:pre-wrap">${esc(p.notes)}</p></section>`:''}
   </div><div class="stack">
   <section class="card"><div class="card-head"><h2>В наявності: ${total} шт.</h2>${total===0&&held.length?'<span class="chip warn">В угоді</span>':''}</div>
     ${recs.length||held.length?recs.map(r=>`<div class="row" style="gap:10px"><span style="width:84px;font-size:13px;color:var(--ink2)">${esc(wh(r.warehouseId).name)}</span><span class="bar"><i style="width:${Math.round(r.quantity/max*100)}%"></i></span><b class="num" style="width:48px;text-align:right;font-size:13px">${r.quantity} шт.</b></div>`).join('')+(held.length?`<div class="col" style="gap:0;margin-top:4px;border-top:1px solid var(--line);padding-top:8px"><span class="lbl" style="padding-bottom:4px">Зарезервовано в неоплачених угодах</span>${held.map(h=>`<div class="row between" style="padding:6px 0;font-size:13px"><button type="button" class="link" data-act="openDeal" data-id="${h.d.id}">№${pad(h.d.no)} · ${esc(h.d.customerName)}</button><b class="num" style="color:var(--warn)">${h.q} шт. · ${esc(h.w)}</b></div>`).join('')}</div>`:''):'<span class="muted sm">Немає в наявності на жодному складі</span>'}
   </section>
+  ${variantsHtml(p)}
   <section class="card" style="gap:2px"><h2 style="padding-bottom:6px">Рух товару</h2>
     <div class="lines">${hist.map(invRow).join('')||'<div class="empty">Записів ще немає</div>'}</div>
   </section>
@@ -756,6 +843,18 @@ VIEWS.product=({id})=>{
     <button type="button" class="btn ghost" data-act="editProduct" data-id="${p.id}">Редагувати</button>
   </div>`:''}`;
 };
+function prodInfoHtml(p){
+  const tab=UI.prodTab==='compat'?'compat':'specs';const cl=compatList(p);const d=p.donorId?donor(p.donorId):null;const g=GROUP[p.group];
+  const kv=(k,v)=>`<div class="kv"><span class="muted">${k}</span><b>${v}</b></div>`;
+  return `<section class="card" style="gap:10px"><div class="seg" role="tablist" aria-label="Інформація про запчастину"><button type="button" role="tab" aria-selected="${tab==='specs'}" class="${tab==='specs'?'on':''}" data-act="prodTab" data-v="specs">Характеристики</button><button type="button" role="tab" aria-selected="${tab==='compat'}" class="${tab==='compat'?'on':''}" data-act="prodTab" data-v="compat">Сумісність<span class="cnt">${cl.length}</span></button></div>
+  ${tab==='specs'?`<div>${kv('Артикул',artNo(p))}${kv('Номер деталі',esc(p.catalogNumber||'—'))}${kv('Виробник',esc(p.manufacturer||'—'))}${kv('Стан',STATE_L[pState(p)])}${kv('Група',g?esc(g.l+(p.sub?' · '+p.sub:'')):'—')}${kv('Донор',d?`<button type="button" class="link" data-act="stDonorGo" data-v="${d.id}">${esc(donorName(d))}</button>`:'—')}${kv('Розташування',p.block?'Блок '+p.block:'—')}</div>`
+  :cl.length?`<ul class="compat">${cl.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:'<span class="muted sm">Сумісність не вказано. Додайте моделі в «Редагувати».</span>'}</section>`;
+}
+function variantsHtml(p){
+  const vs=variantsOf(p);if(!vs.length)return '';
+  return `<section class="card" style="gap:2px"><div class="card-head" style="padding-bottom:6px"><h2>Інші варіанти цієї запчастини</h2><span class="muted sm">${vs.length}</span></div>
+  ${vs.map(v=>{const q=totalQty(v.id);return `<button type="button" class="variant" data-act="openProduct" data-id="${v.id}"><span class="col grow" style="gap:3px;min-width:0"><span class="row wrap" style="gap:6px">${stateChip(v)}<span class="muted xs">Арт. ${artNo(v)}${v.manufacturer?' · '+esc(v.manufacturer):''}</span></span><span style="font-size:14px;font-weight:600">${esc(v.name)}</span><span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${q>0?q+' шт.':'Немає в наявності'}</span></span><span class="num" style="font-weight:700;flex-shrink:0">${v.price?money(v.price,PRICE_CUR):v.marketPrice?'≈ '+money(v.marketPrice,PRICE_CUR):'—'}</span></button>`}).join('')}</section>`;
+}
 function invRow(t,showProduct){
   const w=wh(t.warehouseId),u=user(t.userId),d=t.dealId?deal(t.dealId):null,p=prod(t.productId);
   return `<div><div class="col grow"><span style="font-size:13px;font-weight:700">${INV_TYPES[t.type]||t.type} · ${esc(w?w.name:'—')}${d?` · <button type="button" class="link" data-act="openDeal" data-id="${d.id}">угода №${pad(d.no)}</button>`:''}</span>
@@ -768,8 +867,11 @@ function invRow(t,showProduct){
 const looksLikeCode=q=>/^[A-Za-z0-9][A-Za-z0-9.\-\/]{3,}$/.test(q)&&/\d/.test(q);
 function startForm(id,prefill){
   const p=id?prod(id):null; const ws=activeWh();
-  UI.form=p?{id:p.id,block:p.block?String(p.block):'',code:p.catalogNumber||'',name:p.name,price:String(p.price),condition:p.condition,defective:p.defective,notes:p.notes||'',photos:[...(p.photos||[])],stock:Object.fromEntries(ws.map(w=>[w.id,invQty(p.id,w.id)])),error:''}
-    :{id:null,block:'',code:'',name:'',price:'',condition:'used',defective:false,notes:'',photos:[],stock:Object.fromEntries(ws.map(w=>[w.id,0])),error:''};
+  UI.form=p?{id:p.id,art:p.art,block:p.block?String(p.block):'',code:p.catalogNumber||'',name:p.name,price:p.price?String(p.price):'',state:pState(p),notes:p.notes||'',photos:[...(p.photos||[])],stock:Object.fromEntries(ws.map(w=>[w.id,invQty(p.id,w.id)])),
+      manufacturer:p.manufacturer||'',marketPrice:p.marketPrice!=null?String(p.marketPrice):'',donorId:p.donorId&&donor(p.donorId)?p.donorId:'',group:p.group||'',sub:p.sub||'',compat:p.compat||'',error:''}
+    :{id:null,block:'',code:'',name:'',price:'',state:'used',notes:'',photos:[],stock:Object.fromEntries(ws.map(w=>[w.id,0])),
+      manufacturer:'',marketPrice:'',donorId:UI.stDonor!=='all'&&UI.stDonor!=='none'&&donor(UI.stDonor)?UI.stDonor:'',group:UI.stGroup||'',sub:UI.stGroup?UI.stSub:'',compat:'',error:''};
+  if(!p&&UI.form.donorId){const d=donor(UI.form.donorId);UI.form.compat=donorName(d)}
   if(!p){const target=UI.whTab!=='all'&&wh(UI.whTab)?.active?UI.whTab:(defaultWh()||{}).id;if(target)UI.form.stock[target]=1}
   if(!p&&prefill){const q=prefill.trim();if(looksLikeCode(q))UI.form.code=q.toUpperCase();else UI.form.name=q.charAt(0).toUpperCase()+q.slice(1)}
   go('productForm');
@@ -777,27 +879,37 @@ function startForm(id,prefill){
 }
 const pfPhotosHtml=()=>{const f=UI.form;return `${f.photos.map((ph,i)=>`<div><img src="${ph}" alt="Фото ${i+1}"><button type="button" class="x" data-act="pfPhotoDel" data-v="${i}" aria-label="Видалити фото ${i+1}">×</button></div>`).join('')}
   <label class="photo-add" for="pf-file">${icon('plus',20,2)}Додати<input id="pf-file" type="file" accept="image/*" multiple class="vh" data-change="pfPhotos"></label>`};
-const pfCondHtml=()=>{const c=UI.form.condition;return `<button type="button" role="radio" aria-checked="${c==='new'}" class="${c==='new'?'on':''}" data-act="pfCond" data-v="new">Новий</button><button type="button" role="radio" aria-checked="${c==='used'}" class="${c==='used'?'on':''}" data-act="pfCond" data-v="used">БУ</button>`};
+const pfCondHtml=()=>{const c=UI.form.state;return STATES.map(([k,l])=>`<button type="button" role="radio" aria-checked="${c===k}" class="${c===k?'on':''}" data-act="pfCond" data-v="${k}">${l}</button>`).join('')};
+const pfSubOpts=()=>{const f=UI.form,g=GROUP[f.group];if(!g)return [{v:'',l:'Спершу оберіть групу'}];const extra=[...new Set(DB.products.filter(p=>p.group===f.group&&p.sub&&!g.subs.includes(p.sub)).map(p=>p.sub))];if(f.sub&&!g.subs.includes(f.sub)&&!extra.includes(f.sub))extra.push(f.sub);return [{v:'',l:'Не вказано'},...g.subs.map(x=>({v:x,l:x})),...extra.map(x=>({v:x,l:x}))]};
+const pfSubHtml=()=>ddHtml('pfSub','pf-sub',pfSubOpts(),UI.form.sub,'Не вказано');
 const pfStockHtml=()=>{const f=UI.form;return activeWh().map(w=>`<div class="row between" style="padding:6px 0;border-top:1px solid var(--line)"><span style="font-size:14px;font-weight:600">${esc(w.name)}${w.isDefault?' ★':''}</span>
   <div class="stepper"><button type="button" data-act="pfStock" data-w="${w.id}" data-d="-1" aria-label="Менше" ${f.stock[w.id]>0?'':'disabled'}>−</button><input class="v" type="text" inputmode="numeric" aria-label="Кількість: ${esc(w.name)}" value="${f.stock[w.id]||0}" data-input="pfStockIn" data-w="${w.id}"><button type="button" class="plus" data-act="pfStock" data-w="${w.id}" data-d="1" aria-label="Більше">+</button></div></div>`).join('')};
 const pfTotal=()=>Object.values(UI.form.stock).reduce((s,v)=>s+(v||0),0);
 VIEWS.productForm=()=>{
   const f=UI.form; if(!f) return subhead('Товар')+'<div class="empty">Форму закрито</div>';
-  return `${subhead(f.id?'Редагування товару':'Новий товар')}
+  const donorOpts=[{v:'',l:'Без донора'},...(DB.donors||[]).map(d=>({v:d.id,l:donorName(d)}))];
+  return `${subhead(f.id?'Редагування · Арт. '+String(f.art||0).padStart(6,'0'):'Новий товар')}
   <div class="split"><div class="stack">
   <section class="card"><div class="card-head"><h2>Фото товару</h2><span class="muted sm" id="pf-photo-count">${f.photos.length} фото</span></div><div class="photo-grid" id="pf-photos">${pfPhotosHtml()}</div></section>
   <section class="card" style="gap:14px">
-    <div class="field"><label for="pf-code">Каталожний номер <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="pf-code" class="input" style="font-weight:700;letter-spacing:.3px" value="${esc(f.code)}" placeholder="Напр. 8K0407253F" data-input="pf" data-f="code" autocomplete="off"></div>
+    <div class="field"><label for="pf-code">Номер деталі (OEM) <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="pf-code" class="input" style="font-weight:700;letter-spacing:.3px" value="${esc(f.code)}" placeholder="Напр. VA4050710D" data-input="pf" data-f="code" autocomplete="off"></div>
     <div class="field"><label for="pf-name">Назва <span style="color:var(--danger)">*</span></label><input id="pf-name" class="input" value="${esc(f.name)}" placeholder="Назва запчастини" data-input="pf" data-f="name" autocomplete="off" required></div>
-    <div class="field"><label for="pf-block">Розташування на складі</label>${ddHtml('pfBlock','pf-block',[{v:'',l:'Не вказано'},...BLOCKS.map(n=>({v:String(n),l:'Блок '+n}))],f.block||'','Не вказано')}</div>
-    <div class="field"><label for="pf-price">Ціна, $</label><input id="pf-price" class="input num" inputmode="decimal" value="${esc(f.price)}" placeholder="0" data-input="pf" data-f="price" autocomplete="off"></div>
+    <div class="field"><label for="pf-man">Виробник</label><input id="pf-man" class="input" value="${esc(f.manufacturer)}" placeholder="Напр. MAZDA, BOSCH" data-input="pf" data-f="manufacturer" autocomplete="off"></div>
+    <div class="grid2"><div class="field"><label for="pf-price">Ціна, $</label><input id="pf-price" class="input num" inputmode="decimal" value="${esc(f.price)}" placeholder="0" data-input="pf" data-f="price" autocomplete="off"></div>
+    <div class="field"><label for="pf-market">Ринкова, $</label><input id="pf-market" class="input num" inputmode="decimal" value="${esc(f.marketPrice)}" placeholder="—" data-input="pf" data-f="marketPrice" autocomplete="off"></div></div>
   </section>
-  <section class="card"><h2>Стан</h2><div class="seg" id="pf-cond" role="radiogroup" aria-label="Стан">${pfCondHtml()}</div>
-    <label class="check"><input type="checkbox" id="pf-defect" ${f.defective?'checked':''} data-change="pfDefect" style="accent-color:var(--ink)">Є дефект</label></section>
+  <section class="card"><h2>Стан</h2><div class="seg4" id="pf-cond" role="radiogroup" aria-label="Стан">${pfCondHtml()}</div></section>
+  <section class="card" style="gap:14px"><h2>Каталог</h2>
+    <div class="field"><label for="pf-donor">Донор</label>${ddHtml('pfDonor','pf-donor',donorOpts,f.donorId,'Без донора')}</div>
+    <div class="field"><label for="pf-group">Група</label>${ddHtml('pfGroup','pf-group',[{v:'',l:'Не вказано'},...GROUPS.map(g=>({v:g.k,l:g.l}))],f.group,'Не вказано')}</div>
+    <div class="field"><label for="pf-sub">Підкатегорія</label><div id="pf-sub-wrap">${pfSubHtml()}</div></div>
+    <div class="field"><label for="pf-block">Розташування на складі</label>${ddHtml('pfBlock','pf-block',[{v:'',l:'Не вказано'},...BLOCKS.map(n=>({v:String(n),l:'Блок '+n}))],f.block||'','Не вказано')}</div>
+  </section>
+  <section class="card"><div class="field"><label for="pf-compat" style="font-size:15px;color:var(--ink)">Сумісність</label><textarea id="pf-compat" class="textarea" rows="3" placeholder="Кожна модель з нового рядка, напр. Mazda CX-50 2023–2026" data-input="pf" data-f="compat">${esc(f.compat)}</textarea></div></section>
   </div><div class="stack">
   <section class="card" style="gap:4px"><div class="card-head" style="padding-bottom:6px"><h2>Наявність</h2><span class="muted sm">разом <span id="pf-total">${pfTotal()}</span> шт.</span></div><div id="pf-stock">${pfStockHtml()}</div>
     ${f.id?'<span class="hint" style="padding-top:8px">Зміна кількості запишеться в журнал як корекція</span>':'<span class="hint" style="padding-top:8px">Початкова кількість запишеться в журнал як прихід</span>'}</section>
-  <section class="card"><div class="field"><label for="pf-notes" style="font-size:15px;color:var(--ink)">Нотатки</label><textarea id="pf-notes" class="textarea" rows="3" placeholder="Звідки знято, пробіг, нюанси" data-input="pf" data-f="notes">${esc(f.notes)}</textarea></div></section>
+  <section class="card"><div class="field"><label for="pf-notes" style="font-size:15px;color:var(--ink)">Опис</label><textarea id="pf-notes" class="textarea" rows="3" placeholder="Колір, комплектація, пробіг, нюанси" data-input="pf" data-f="notes">${esc(f.notes)}</textarea></div></section>
   <div class="err" id="pf-err" role="alert">${esc(f.error)}</div>
   <button type="button" class="btn primary" style="height:58px;border-radius:29px" data-act="pfSave">Зберегти</button>
   ${f.id?`<button type="button" class="btn text" data-act="pfDeleteAsk">Видалити товар</button><span class="muted sm" style="text-align:center;margin-top:-8px">Товар зникне зі складу й пошуку, але залишиться в історії угод</span>`:''}
@@ -808,9 +920,10 @@ async function pfSave(){
   const f=UI.form; const err=m=>{f.error=m;patch('#pf-err',esc(m))};
   const name=f.name.trim(); if(!name) return err('Вкажіть назву товару');
   const price=f.price.trim()===''?0:parseNum(f.price); if(!(price>=0)) return err('Ціна має бути числом');
+  const market=f.marketPrice.trim()===''?null:parseNum(f.marketPrice); if(market!==null&&!(market>=0)) return err('Ринкова ціна має бути числом');
   for(const w of activeWh()){const v=f.stock[w.id];if(!Number.isInteger(v)||v<0) return err(`Кількість на «${w.name}» має бути цілим числом від 0`)}
   try{
-    const r=await act('saveProduct',{id:f.id,block:f.block,catalogNumber:f.code.trim(),name,price,condition:f.condition,defective:f.defective,notes:f.notes.trim(),photos:f.photos,stock:f.stock});
+    const r=await act('saveProduct',{id:f.id,block:f.block,catalogNumber:f.code.trim(),name,price,state:f.state,notes:f.notes.trim(),photos:f.photos,stock:f.stock,manufacturer:f.manufacturer.trim(),marketPrice:market,donorId:f.donorId||null,group:f.group,sub:f.sub,compat:f.compat});
     const isNew=!f.id; UI.form=null; UI.photoIdx=0;
     if(isNew) go('product',{id:r.productId},{replace:true}); else back();
     toast(isNew?'Товар додано':'Зміни збережено');
@@ -945,6 +1058,17 @@ SHEETS.wh=s=>{const w=s.id?wh(s.id):null;
   <div class="err" role="alert">${esc(s.error||'')}</div>
   <div class="row gap">${w?`<button type="button" class="btn ghost grow" data-act="whToggle">${w.active?'Деактивувати':'Активувати'}</button>`:''}<button type="button" class="btn primary grow2" data-act="whSave">Зберегти</button></div>
   ${w?'<button type="button" class="btn text" data-act="whDeleteAsk">Видалити склад</button>':''}`)};
+SHEETS.donor=s=>{const d=s.id?donor(s.id):null;const f=(k,l,ph,extra='')=>`<div class="field"><label for="dn-${k}">${l}</label><input id="dn-${k}" class="input" value="${esc(s[k])}" placeholder="${ph}" data-input="sheetField" data-f="${k}" autocomplete="off" ${extra}></div>`;
+  const used=new Set((DB.donors||[]).map(x=>x.templateKey).filter(Boolean));const tpls=(DB.templates||[]).filter(t=>!used.has(t.key));
+  return sheetWrap(d?'Донор':'Новий донор',`
+  ${!d&&tpls.length?`<div class="col" style="gap:8px;padding:12px 14px;border-radius:18px;background:var(--soft)"><span class="lbl">Створити з шаблону</span>${tpls.map(t=>`<div class="row between gap"><div class="col" style="gap:0;min-width:0"><b>${esc(t.title)}</b><span class="muted xs">${partsWord(t.count)} з номерами, групами, ринковими цінами · кількість 0</span></div><button type="button" class="btn primary small" data-act="donorTpl" data-v="${esc(t.key)}">Додати</button></div>`).join('')}</div><span class="muted sm" style="text-align:center">або вкажіть авто вручну</span>`:''}
+  <div class="grid2">${f('make','Марка <span style="color:var(--danger)">*</span>','Mazda',d?'':'data-autofocus')}${f('model','Модель','CX-50')}</div>
+  <div class="grid2">${f('years','Роки','2023–2026')}${f('engine','Двигун','2.5 бензин')}</div>
+  <div class="grid2">${f('color','Колір','Чорний')}${f('vin','VIN','JM3…')}</div>
+  <div class="field"><label for="dn-notes">Нотатки</label><textarea id="dn-notes" class="textarea" rows="2" placeholder="Пробіг, дата купівлі, стан" data-input="sheetField" data-f="notes">${esc(s.notes)}</textarea></div>
+  <div class="err" role="alert">${esc(s.error||'')}</div>
+  <div class="row gap"><button type="button" class="btn ghost grow" data-act="closeSheet">Скасувати</button><button type="button" class="btn primary grow2" data-act="donorSave">Зберегти</button></div>
+  ${d?'<button type="button" class="btn text" data-act="donorDeleteAsk">Видалити донора</button>':''}`)};
 SHEETS.dealDelete=s=>{const d=deal(s.dealId);const units=d.items.reduce((a,i)=>a+i.quantity,0);
   return sheetWrap('Видалити угоду №'+pad(d.no)+'?',`<p style="margin:0;color:var(--ink2);line-height:1.45">${units} шт. запчастин повернуться на склади, з яких їх відвантажували. Угода зникне зі списків, а в журналі руху товару залишиться запис про повернення.</p>
   <div class="field"><label for="dd-why">Причина <span class="muted" style="font-weight:600">· необовʼязково</span></label><input id="dd-why" class="input" value="${esc(s.reason)}" placeholder="Напр. клієнт відмовився" data-input="sheetField" data-f="reason" autocomplete="off"></div>
@@ -969,7 +1093,7 @@ A.dealDelete=async()=>{const s=UI.sheet;
 A.editDeal=el=>startEditDeal(el.dataset.id);
 A.dealsTab=el=>{UI.dealsTab=el.dataset.v;render()};
 A.openDeal=el=>go('deal',{id:el.dataset.id});
-A.openProduct=el=>{UI.photoIdx=0;go('product',{id:el.dataset.id})};
+A.openProduct=el=>{UI.photoIdx=0;UI.prodTab='specs';go('product',{id:el.dataset.id})};
 A.paySheet=el=>{const d=deal(el.dataset.id);openSheet({type:'pay',dealId:d.id,acct:defaultAcct(dcur(d)),amount:String(d.total),error:''})};
 A.payAcct=el=>{const s=UI.sheet,d=deal(s.dealId);s.acct=el.dataset.v;s.amount=prefillCur(ACC[s.acct].currency,dcur(d))?String(d.total):'';s.error='';renderSheet();const i=$('#pay-amt');if(i&&!s.amount)i.focus()};
 A.payConfirm=async()=>{const s=UI.sheet,d=deal(s.dealId);const h=payHint(s.acct,s.amount,d.total,dcur(d));if(!h.valid)return;
@@ -999,25 +1123,40 @@ A.spendConfirm=async()=>{const s=UI.sheet,a=ACC[s.acct];const err=m=>{s.error=m;
   }catch(e){sheetErr(e)}};
 A.closeSheetBg=(el,e)=>{if(e.target===el)A.closeSheet()};
 A.ndDelivery=el=>{UI.draft.delivery=el.dataset.v;patch('#nd-seg',ndSegHtml());patch('#nd-delivery',ndDeliveryHtml());if(el.dataset.v==='delivery'){const t=$('#nd-details');if(t)t.focus()}};
-A.ndAdd=el=>{const p=prod(el.dataset.p);UI.draft.items.push({key:uid(),productId:p.id,warehouseId:el.dataset.w,quantity:1,price:String(p.price)});UI.draft.error='';patch('#nd-err','');ndRefresh()};
+A.ndAdd=el=>{const p=prod(el.dataset.p);UI.draft.items.push({key:uid(),productId:p.id,warehouseId:el.dataset.w,quantity:1,price:String(priceOf(p))});UI.draft.error='';patch('#nd-err','');ndRefresh()};
 A.ndRemove=el=>{UI.draft.items=UI.draft.items.filter(i=>i.key!==el.dataset.k);ndRefresh()};
 A.ndQty=el=>{const i=UI.draft.items.find(x=>x.key===el.dataset.k);const avail=availFor(i);i.quantity=Math.max(1,Math.min(avail,i.quantity+Number(el.dataset.d)));patch('#nd-items',ndItemsHtml());ndRefreshTotals()};
 A.ndAcct=el=>{const dr=UI.draft;dr.acct=el.dataset.v;dr.amount='';dr.touched=!prefillCur(ACC[dr.acct].currency,dr.cur);patch('#nd-pay',ndPayHtml());patch('#nd-hint',ndHint());if(dr.touched){const i=$('#nd-amt');if(i)i.focus()}};
 A.ndShip=()=>ndShip();
-A.whTab=el=>{UI.whTab=el.dataset.v;render()};
+A.whTab=el=>{UI.whTab=el.dataset.v;UI.stLimit=60;stRefresh()};
+A.stAvail=el=>{UI.stAvail=el.dataset.v;UI.stLimit=60;stRefresh()};
+A.stDonor=el=>{UI.stDonor=el.dataset.v;UI.stLimit=60;stRefresh()};
+A.stDonorGo=el=>{UI.stDonor=el.dataset.v;UI.stGroup='';UI.stSub='';UI.stLimit=60;go('stock',{},{root:true})};
+A.stGroup=el=>{const v=el.dataset.v;UI.stGroup=UI.stGroup===v?'':v;UI.stSub='';UI.stLimit=60;stRefresh()};
+A.stSub=el=>{UI.stSub=el.dataset.v;UI.stLimit=60;stRefresh()};
+A.stMore=()=>{UI.stLimit+=60;patch('#wh-list',whListHtml())};
+A.stReset=()=>{UI.stAvail='all';UI.stDonor='all';UI.stGroup='';UI.stSub='';UI.whTab='all';UI.stLimit=60;stRefresh()};
+A.prodTab=el=>{UI.prodTab=el.dataset.v;render()};
+A.donorEdit=el=>{const d=el.dataset.id?donor(el.dataset.id):null;openSheet({type:'donor',id:d?d.id:null,make:d?d.make:'',model:d?d.model:'',years:d?d.years:'',engine:d?d.engine:'',color:d?d.color:'',vin:d?d.vin:'',notes:d?d.notes:'',error:''})};
+A.donorSave=async()=>{const s=UI.sheet;if(!s.make.trim()){s.error='Вкажіть марку авто';return renderSheet()}
+  try{const r=await act('saveDonor',{id:s.id,make:s.make,model:s.model,years:s.years,engine:s.engine,color:s.color,vin:s.vin,notes:s.notes});UI.sheet=null;if(!s.id){UI.stDonor=r.donorId;UI.stGroup='';UI.stSub=''}render();toast(s.id?'Донора збережено':'Донора додано')}catch(e){sheetErr(e)}};
+A.donorTpl=async el=>{const s=UI.sheet;el.disabled=true;el.textContent='Додаю…';
+  try{const r=await act('importTemplate',{key:el.dataset.v});UI.sheet=null;UI.stDonor=r.donorId;UI.stAvail='all';UI.stGroup='';UI.stSub='';UI.stLimit=60;render();toast(`Додано ${partsWord(r.count)} — кількість 0, ціни ринкові`)}catch(e){sheetErr(e)}};
+A.donorDeleteAsk=()=>{const s=UI.sheet,d=donor(s.id);const n=activeProducts().filter(p=>p.donorId===d.id).length;
+  openSheet({type:'confirm',title:'Видалити донора?',text:`«${donorName(d)}» зникне зі списку донорів.${n?` ${partsWord(n)} залишаться на складі без привʼязки до донора.`:''}`,ok:'Видалити',on:'deleteDonor',id:d.id})};
 A.newProduct=()=>startForm(null);
 A.addFromSearch=()=>startForm(null,UI.whQ);
 A.editProduct=el=>startForm(el.dataset.id);
 A.photoIdx=el=>{UI.photoIdx=Number(el.dataset.v);render()};
 A.sellProduct=el=>{const p=prod(el.dataset.id);const dw=defaultWh();let w=dw&&invQty(p.id,dw.id)>0?dw.id:null;
   if(!w){const r=DB.inventory.filter(x=>x.productId===p.id&&x.quantity>0&&wh(x.warehouseId)?.active).sort((a,b)=>b.quantity-a.quantity)[0];w=r&&r.warehouseId}
-  if(!w)return toast('Немає в наявності');startDeal({productId:p.id,warehouseId:w,quantity:1,price:String(p.price)})};
+  if(!w)return toast('Немає в наявності');startDeal({productId:p.id,warehouseId:w,quantity:1,price:String(priceOf(p))})};
 A.addStockSheet=el=>openSheet({type:'addStock',productId:el.dataset.id,wid:defaultWh().id,qty:1,error:''});
 A.asWh=el=>{UI.sheet.wid=el.dataset.v;renderSheet()};
 A.asQty=el=>{UI.sheet.qty=Math.max(1,UI.sheet.qty+Number(el.dataset.d));renderSheet()};
 A.asConfirm=async()=>{const s=UI.sheet;
   try{await act('addStock',{productId:s.productId,warehouseId:s.wid,quantity:s.qty});UI.sheet=null;render();toast(`+${s.qty} шт. на ${wh(s.wid).name}`)}catch(e){sheetErr(e)}};
-A.pfCond=el=>{UI.form.condition=el.dataset.v;patch('#pf-cond',pfCondHtml())};
+A.pfCond=el=>{UI.form.state=el.dataset.v;patch('#pf-cond',pfCondHtml())};
 A.pfStock=el=>{const f=UI.form,w=el.dataset.w;f.stock[w]=Math.max(0,(f.stock[w]||0)+Number(el.dataset.d));patch('#pf-stock',pfStockHtml());patch('#pf-total',String(pfTotal()))};
 A.pfPhotoDel=el=>{UI.form.photos.splice(Number(el.dataset.v),1);patch('#pf-photos',pfPhotosHtml());patch('#pf-photo-count',UI.form.photos.length+' фото')};
 A.pfSave=()=>pfSave();
@@ -1026,6 +1165,7 @@ A.confirmOk=async()=>{const cs=UI.sheet,on=cs.on;
   try{
     if(on==='deleteWh'){await act('deleteWarehouse',{id:cs.id});const w=wh(cs.id);if(UI.whTab===cs.id)UI.whTab='all';UI.sheet=null;render();toast(`Склад «${w?w.name:''}» видалено`)}
     else if(on==='deleteUser'){await act('deleteUser',{id:cs.id});const u=user(cs.id);UI.sheet=null;render();toast(`Користувача ${u?u.name:''} видалено`)}
+    else if(on==='deleteDonor'){await act('deleteDonor',{id:cs.id});if(UI.stDonor===cs.id)UI.stDonor='all';UI.sheet=null;render();toast('Донора видалено')}
     else if(on==='deleteProduct'){await act('deleteProduct',{id:cs.id});UI.sheet=null;UI.form=null;go('stock',{},{root:true});toast('Товар видалено')}
   }catch(e){UI.sheet=null;renderSheet();toast(errMsg(e))}};
 A.userEdit=el=>{if(!isAdmin())return toast('Керувати користувачами може лише адмін');const u=el.dataset.id?user(el.dataset.id):null;openSheet({type:'user',id:u?u.id:null,name:u?u.name:'',role:u?u.role:'owner',pin:'',error:''})};
@@ -1059,7 +1199,7 @@ A.whDefault=async el=>{try{await act('setDefaultWarehouse',{id:el.dataset.id});r
 /* ---------- inputs ---------- */
 const I={};
 I.dealsQ=el=>{UI.dealsQ=el.value;patch('#deals-list',dealsListHtml())};
-I.whQ=el=>{UI.whQ=el.value;patch('#wh-list',whListHtml())};
+I.whQ=el=>{UI.whQ=el.value;UI.stLimit=60;stRefresh()};
 I.payAmt=el=>{const s=UI.sheet,d=deal(s.dealId);s.amount=el.value;const h=payHint(s.acct,s.amount,d.total,dcur(d));const hint=$('#pay-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'');$('#pay-ok').disabled=!h.valid};
 I.ndCustomer=el=>{UI.draft.customer=el.value};
 I.ndDetails=el=>{UI.draft.details=el.value};
@@ -1077,6 +1217,11 @@ C.spendWho=el=>{UI.sheet.who=el.value;renderSheet()};
 DD.invUser=v=>{UI.invUser=v;render()};
 DD.pfBlock=(v,root)=>{UI.form.block=v;const l=root.querySelector('.dd-label');if(l)l.textContent=v?'Блок '+v:'Не вказано';root.querySelectorAll('.dd-opt').forEach(o=>{const on=o.dataset.v===v;o.classList.toggle('on',on);o.setAttribute('aria-selected',on);const t=o.querySelector('.tick');if(on&&!t)o.insertAdjacentHTML('beforeend',`<span class="tick">${icon('check',16,2.4)}</span>`);if(!on&&t)t.remove()})};
 DD.spendWho=v=>{UI.sheet.who=v;renderSheet()};
+function ddMark(root,v,label){const l=root.querySelector('.dd-label');if(l)l.textContent=label;root.querySelectorAll('.dd-opt').forEach(o=>{const on=o.dataset.v===v;o.classList.toggle('on',on);o.setAttribute('aria-selected',on);const t=o.querySelector('.tick');if(on&&!t)o.insertAdjacentHTML('beforeend',`<span class="tick">${icon('check',16,2.4)}</span>`);if(!on&&t)t.remove()})}
+DD.pfDonor=(v,root)=>{const f=UI.form;const old=f.donorId?donorName(donor(f.donorId)):'';f.donorId=v;const d=donor(v);ddMark(root,v,d?donorName(d):'Без донора');
+  if(d&&!compatList({compat:f.compat}).includes(donorName(d))&&(!f.compat.trim()||f.compat.trim()===old)){f.compat=donorName(d);const t=$('#pf-compat');if(t)t.value=f.compat}};
+DD.pfGroup=(v,root)=>{UI.form.group=v;UI.form.sub='';ddMark(root,v,GROUP[v]?GROUP[v].l:'Не вказано');patch('#pf-sub-wrap',pfSubHtml())};
+DD.pfSub=(v,root)=>{UI.form.sub=v;ddMark(root,v,v||'Не вказано')};
 A.ddToggle=el=>{const root=el.closest('.dd');const open=!root.classList.contains('open');ddCloseAll(root);root.classList.toggle('open',open);el.setAttribute('aria-expanded',open);if(open){const on=root.querySelector('.dd-opt.on')||root.querySelector('.dd-opt');if(on){on.scrollIntoView({block:'nearest'});on.focus({preventScroll:true})}}};
 A.ddPick=el=>{const root=el.closest('.dd');ddCloseAll();const fn=DD[root.dataset.dd];if(fn)fn(el.dataset.v,root);const b=root.querySelector('.dd-btn');if(b&&document.body.contains(b))b.focus({preventScroll:true})};
 C.whDefaultChk=el=>{UI.sheet.isDefault=el.checked};

@@ -143,6 +143,23 @@ CREATE TABLE IF NOT EXISTS financial_transactions (
   investor_user_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_fintx_account ON financial_transactions(account_id);
+
+-- Донор (авто, з якого знімають запчастини)
+CREATE TABLE IF NOT EXISTS donors (
+  id TEXT PRIMARY KEY,
+  make TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  years TEXT NOT NULL DEFAULT '',
+  engine TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT '',
+  vin TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  template_key TEXT,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT,
+  deleted_by TEXT
+);
 `;
 
 const ACCOUNTS = [
@@ -191,6 +208,19 @@ function openDatabase(dataDir) {
     })();
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_fintx_investor ON financial_transactions(investor_user_id)');
+  // Структура складу як у каталозі: донор, група/підкатегорія, артикул, виробник, ринкова ціна, сумісність
+  const pcols = { donor_id: 'TEXT', grp: "TEXT NOT NULL DEFAULT ''", sub: "TEXT NOT NULL DEFAULT ''", analog: 'INTEGER NOT NULL DEFAULT 0',
+    art: 'INTEGER', manufacturer: "TEXT NOT NULL DEFAULT ''", market_price: 'REAL', compat: "TEXT NOT NULL DEFAULT ''" };
+  for (const [c, t] of Object.entries(pcols)) if (!hasCol('products', c)) db.exec(`ALTER TABLE products ADD COLUMN ${c} ${t}`);
+  db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('next_art', '1')").run();
+  const noArt = db.prepare('SELECT id FROM products WHERE art IS NULL ORDER BY created_at, id').all();
+  if (noArt.length) db.transaction(() => {
+    let n = Number(db.prepare("SELECT value FROM meta WHERE key = 'next_art'").get().value);
+    const up = db.prepare('UPDATE products SET art = ? WHERE id = ?');
+    noArt.forEach(r => up.run(n++, r.id));
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'next_art'").run(String(n));
+  })();
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_catalog ON products(catalog_number)');
   return db;
 }
 
