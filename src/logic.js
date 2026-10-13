@@ -57,6 +57,7 @@ function createLogic(db, secret) {
   const getWh = id => q('SELECT * FROM warehouses WHERE id = ?').get(id);
   const getProduct = id => q('SELECT * FROM products WHERE id = ?').get(id);
   const getDeal = id => q('SELECT * FROM deals WHERE id = ?').get(id);
+  const defaultWhRow = () => q('SELECT * FROM warehouses WHERE is_default = 1 AND active = 1 AND deleted = 0').get() || q('SELECT * FROM warehouses WHERE active = 1 AND deleted = 0 ORDER BY created_at').get();
   const getDonor = id => q('SELECT * FROM donors WHERE id = ? AND deleted = 0').get(id);
   function insertProduct(id, cols, fields) {
     const art = Number(getMeta('next_art') || 1); setMeta('next_art', art + 1);
@@ -123,16 +124,39 @@ function createLogic(db, secret) {
     const r = dealCur === 'UAH' ? total / amount : amount / total;
     return Math.round(r * 10000) / 10000;
   }
-  function payInfo(accountId, amountRaw, total, dealCur) {
+  // Скільки вже оплачено по угоді (у валюті угоди)
+  const paidOf = dealId => round2(q("SELECT COALESCE(SUM(deal_amount_uah), 0) AS s FROM financial_transactions WHERE deal_id = ? AND type = 'sale'").get(dealId).s);
+  // cover — яку частину суми угоди (у валюті угоди) покриває платіж. Без cover: у тій самій валюті — сама сума (не більше залишку), в іншій — увесь залишок.
+  function payInfo(accountId, amountRaw, remaining, dealCur, coverRaw) {
     const a = needAccount(accountId);
-    const amount = (amountRaw === '' || amountRaw == null) && a.currency === dealCur ? total : num(amountRaw, 'Сума зарахування', { allowZero: false });
+    const amount = (amountRaw === '' || amountRaw == null) && a.currency === dealCur ? remaining : num(amountRaw, 'Сума зарахування', { allowZero: false });
     if (!(amount > 0)) fail('Сума зарахування має бути більше 0');
-    return { account: a, amount, rate: calcRate(a.currency, dealCur, amount, total) };
+    let cover;
+    if (coverRaw !== '' && coverRaw != null) {
+      cover = num(coverRaw, 'Сума по угоді', { allowZero: false });
+      if (cover > remaining + 0.005) fail(`По угоді залишилось сплатити лише ${remaining}`);
+    } else cover = a.currency === dealCur ? Math.min(amount, remaining) : remaining;
+    cover = round2(cover);
+    return { account: a, amount, cover, rate: calcRate(a.currency, dealCur, amount, cover) };
   }
   function applyPayment(deal, info, user) {
-    addFin({ accountId: info.account.id, amount: info.amount, type: 'sale', dealId: deal.id, dealAmountUah: deal.total, dealCurrency: deal.currency || 'UAH', rate: info.rate, userId: user.id });
+    addFin({ accountId: info.account.id, amount: info.amount, type: 'sale', dealId: deal.id, dealAmountUah: info.cover, dealCurrency: deal.currency || 'UAH', rate: info.rate, userId: user.id });
+    settleIfPaid(deal.id, info);
+  }
+  function settleIfPaid(dealId, info) {
+    const d = getDeal(dealId);
+    if (d.status !== 'new' || paidOf(d.id) < d.total - 0.005) return false;
+    const last = info || (() => { const t = q("SELECT * FROM financial_transactions WHERE deal_id = ? AND type = 'sale' ORDER BY at DESC LIMIT 1").get(d.id); return t && { account: ACC[t.account_id], amount: t.amount, rate: t.rate }; })();
     q(`UPDATE deals SET payment_status = 'paid', status = 'done', paid_at = ?, pay_account = ?, pay_amount = ?, pay_currency = ?, pay_rate = ? WHERE id = ?`)
-      .run(nowISO(), info.account.id, info.amount, info.account.currency, info.rate, deal.id);
+      .run(nowISO(), last ? last.account.id : null, last ? last.amount : null, last ? last.account.currency : null, last ? last.rate : null, d.id);
+    return true;
+  }
+  // Повернення коштів з рахунку (з перевіркою залишку)
+  function refundFin(accountId, amount, f) {
+    if (!(amount > 0)) return;
+    const bal = balance(accountId);
+    if (amount > bal + 1e-9) fail(`На рахунку ${ACC[accountId].name} лише ${bal} — недостатньо для повернення ${amount}`, 409, 'balance');
+    addFin({ ...f, accountId, amount: -amount, type: 'return' });
   }
   function insertItems(dealId, items) {
     const ins = q('INSERT INTO deal_items (deal_id, product_id, warehouse_id, quantity, price, position) VALUES (?, ?, ?, ?, ?, ?)');
@@ -180,7 +204,7 @@ function createLogic(db, secret) {
          VALUES (?, ?, ?, ?, ?, ?, ?, 'unpaid', 'new', ?, ?)`).run(id, no, h.customer, h.delivery, h.details, total, PRICE_CURRENCY, user.id, nowISO());
       insertItems(id, items);
       items.forEach(i => changeInv(i.productId, i.warehouseId, -i.quantity, 'sale', user.id, id));
-      if (p.payment) applyPayment(getDeal(id), payInfo(p.payment.accountId, p.payment.amount, total, PRICE_CURRENCY), user);
+      if (p.payment) applyPayment(getDeal(id), payInfo(p.payment.accountId, p.payment.amount, total, PRICE_CURRENCY, p.payment.cover), user);
       return { dealId: id, no };
     },
     updateDeal(user, p) {
@@ -198,21 +222,29 @@ function createLogic(db, secret) {
       q('DELETE FROM deal_items WHERE deal_id = ?').run(d.id);
       insertItems(d.id, items);
       const total = round2(items.reduce((s, i) => s + i.quantity * i.price, 0));
+      const paid = paidOf(d.id);
+      if (paid > total + 0.005) fail(`По угоді вже внесено ${paid} — сума угоди не може бути меншою`, 409, 'paid');
       q('UPDATE deals SET customer_name = ?, delivery_type = ?, delivery_details = ?, total = ?, edited_at = ?, edited_by = ? WHERE id = ?')
         .run(h.customer, h.delivery, h.details, total, nowISO(), user.id, d.id);
+      if (paid > 0) settleIfPaid(d.id);
       return { dealId: d.id, no: d.no };
     },
     payDeal(user, p) {
       const d = getDeal(str(p.dealId, 64));
       if (!d || d.status !== 'new') fail('Угоду вже оплачено або видалено', 409, 'state');
-      const info = payInfo(p.accountId, p.amount, d.total, d.currency || 'UAH');
+      const remaining = round2(d.total - paidOf(d.id));
+      if (remaining <= 0.005) { settleIfPaid(d.id); fail('Угоду вже повністю оплачено', 409, 'state'); }
+      const info = payInfo(p.accountId, p.amount, remaining, d.currency || 'UAH', p.cover);
       applyPayment(d, info, user);
-      return { dealId: d.id, amount: info.amount, currency: info.account.currency, account: info.account.name };
+      return { dealId: d.id, amount: info.amount, currency: info.account.currency, account: info.account.name, done: getDeal(d.id).status === 'done' };
     },
     cancelDeal(user, p) {
       const d = getDeal(str(p.dealId, 64));
       if (!d || d.status !== 'new') fail('Видалити можна лише неоплачену угоду', 409, 'state');
       dealItems(d.id).forEach(i => changeInv(i.product_id, i.warehouse_id, i.quantity, 'return', user.id, d.id));
+      // передоплату повертаємо на ті самі рахунки
+      q("SELECT * FROM financial_transactions WHERE deal_id = ? AND type = 'sale'").all(d.id).forEach(t =>
+        refundFin(t.account_id, t.amount, { dealId: d.id, dealAmountUah: -(t.deal_amount_uah || 0), dealCurrency: t.deal_currency, rate: t.rate, userId: user.id, purpose: 'Повернення передоплати' }));
       q("UPDATE deals SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?").run(nowISO(), user.id, str(p.reason, 500), d.id);
       return { dealId: d.id, no: d.no };
     },
@@ -270,6 +302,45 @@ function createLogic(db, secret) {
         q('INSERT INTO donors (id, make, model, years, engine, color, vin, notes, cost, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)').run(id, ...f, nowISO());
       }
       return { donorId: id };
+    },
+    // Повернення товару з оплаченої угоди (повністю або частково)
+    returnDeal(user, p) {
+      const d = getDeal(str(p.dealId, 64));
+      if (!d || d.status !== 'done') fail('Повернення можливе лише для оплаченої угоди', 409, 'state');
+      const raw = Array.isArray(p.items) ? p.items : [];
+      const rows = dealItems(d.id);
+      const back = q('SELECT product_id, warehouse_id, SUM(quantity) AS q FROM deal_returns WHERE deal_id = ? GROUP BY product_id, warehouse_id').all(d.id);
+      const backMap = new Map(back.map(r => [r.product_id + '|' + r.warehouse_id, r.q]));
+      const items = [];
+      for (const r of raw) {
+        const n = Number(r.quantity) || 0; if (!n) continue;
+        const k = str(r.productId, 64) + '|' + str(r.warehouseId, 64);
+        const lines = rows.filter(x => x.product_id + '|' + x.warehouse_id === k);
+        if (!lines.length) fail('Цього товару немає в угоді');
+        const sold = lines.reduce((s, x) => s + x.quantity, 0);
+        const left = sold - (backMap.get(k) || 0) - items.filter(i => i.k === k).reduce((s, i) => s + i.n, 0);
+        const qn = int(n, 'Кількість повернення', 1);
+        if (qn > left) fail(`Повернути можна не більше ${left} шт. цієї позиції`);
+        const price = lines.reduce((s, x) => s + x.quantity * x.price, 0) / sold;
+        items.push({ k, n: qn, productId: lines[0].product_id, warehouseId: lines[0].warehouse_id, value: round2(qn * price) });
+      }
+      if (!items.length) fail('Оберіть, що повертається');
+      const value = round2(items.reduce((s, i) => s + i.value, 0));
+      let accountId = null, refund = 0;
+      if (p.accountId) {
+        const a = needAccount(p.accountId); accountId = a.id;
+        refund = p.amount === '' || p.amount == null ? 0 : num(p.amount, 'Сума повернення');
+      }
+      const no = newId('rt_'), at = nowISO(), reason = str(p.reason, 500);
+      if (refund > 0) refundFin(accountId, refund, { dealId: d.id, dealAmountUah: -value, dealCurrency: d.currency || 'UAH', rate: calcRate(ACC[accountId].currency, d.currency || 'UAH', refund, value), userId: user.id, purpose: 'Повернення товару' + (reason ? ': ' + reason : '') });
+      for (const i of items) {
+        const w = getWh(i.warehouseId);
+        const wid = w && w.active && !w.deleted ? w.id : needActiveWh((defaultWhRow() || {}).id).id;
+        changeInv(i.productId, wid, i.n, 'return', user.id, d.id);
+        q('INSERT INTO deal_returns (id, deal_id, return_no, product_id, warehouse_id, quantity, value, account_id, refund, reason, user_id, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(newId('dr_'), d.id, no, i.productId, wid, i.n, i.value, accountId, items.indexOf(i) === 0 ? refund : 0, reason, user.id, at);
+      }
+      return { dealId: d.id, no: d.no, units: items.reduce((s, i) => s + i.n, 0), value, refund };
     },
     addProductPhotos(user, p) {
       const pr = getProduct(str(p.productId, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
@@ -467,7 +538,9 @@ function createLogic(db, secret) {
     q('SELECT * FROM deal_items ORDER BY position, id').all().forEach(i => {
       (itemsBy[i.deal_id] ||= []).push({ productId: i.product_id, warehouseId: i.warehouse_id, quantity: i.quantity, price: i.price });
     });
-    const deals = q('SELECT * FROM deals ORDER BY no').all().map(d => ({
+    const retBy = {};
+    q('SELECT * FROM deal_returns ORDER BY at').all().forEach(r => { (retBy[r.deal_id] ||= []).push({ no: r.return_no, productId: r.product_id, warehouseId: r.warehouse_id, quantity: r.quantity, value: r.value, accountId: r.account_id, refund: r.refund, reason: r.reason, userId: r.user_id, at: r.at }); });
+    const deals = q('SELECT * FROM deals ORDER BY no').all().map(d => ({ returns: retBy[d.id] || [],
       id: d.id, no: d.no, customerName: d.customer_name, deliveryType: d.delivery_type, deliveryDetails: d.delivery_details,
       items: itemsBy[d.id] || [], total: d.total, currency: d.currency || 'UAH', paymentStatus: d.payment_status, status: d.status,
       createdBy: d.created_by, createdAt: d.created_at, paidAt: d.paid_at,

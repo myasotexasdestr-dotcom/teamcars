@@ -144,6 +144,23 @@ CREATE TABLE IF NOT EXISTS financial_transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_fintx_account ON financial_transactions(account_id);
 
+-- Повернення товару з оплаченої угоди
+CREATE TABLE IF NOT EXISTS deal_returns (
+  id TEXT PRIMARY KEY,
+  deal_id TEXT NOT NULL REFERENCES deals(id),
+  return_no TEXT NOT NULL,
+  product_id TEXT NOT NULL REFERENCES products(id),
+  warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  value REAL NOT NULL,
+  account_id TEXT,
+  refund REAL NOT NULL DEFAULT 0,
+  reason TEXT NOT NULL DEFAULT '',
+  user_id TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_returns_deal ON deal_returns(deal_id);
+
 -- Донор (авто, з якого знімають запчастини)
 CREATE TABLE IF NOT EXISTS donors (
   id TEXT PRIMARY KEY,
