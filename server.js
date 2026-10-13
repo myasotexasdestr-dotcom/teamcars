@@ -38,6 +38,8 @@ if (seeded) {
     ? 'Створено демо-дані. PIN: 1111 (адмін), 2222 (власник).'
     : `Створено першого адміна «${process.env.ADMIN_NAME || 'Адміністратор'}». Увійдіть і одразу змініть PIN у Налаштуваннях.`);
 }
+const cat = logic.ensureCatalog();
+if (cat.length) console.log('Каталог запчастин додано: ' + cat.map(c => `${c.title} (${c.count})`).join(', '));
 
 // --- sessions ---
 const tokenHash = t => crypto.createHash('sha256').update(t).digest('hex');

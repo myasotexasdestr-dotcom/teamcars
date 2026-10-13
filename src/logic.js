@@ -278,24 +278,10 @@ function createLogic(db, secret) {
     importTemplate(user, p) {
       const key = str(p.key, 40);
       if (!/^[a-z0-9-]+$/.test(key)) fail('Шаблон не знайдено');
-      const file = path.join(TEMPLATES_DIR, key + '.json');
-      if (!fs.existsSync(file)) fail('Шаблон не знайдено на сервері');
-      if (q('SELECT id FROM donors WHERE template_key = ? AND deleted = 0').get(key)) fail('Цей шаблон уже додано', 409, 'exists');
-      const t = JSON.parse(fs.readFileSync(file, 'utf8'));
-      const donorId = newId('dn_'), at = nowISO();
-      const dn = t.donor || {};
-      q('INSERT INTO donors (id, make, model, years, engine, color, vin, notes, template_key, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)')
-        .run(donorId, str(dn.make, 60) || 'Авто', str(dn.model, 60), str(dn.years, 30), str(dn.engine, 60), '', '', '', key, at);
-      const cols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat';
-      let n = 0;
-      for (const r of t.parts || []) {
-        const st = STATES[r.c] || STATES.used;
-        insertProduct(newId('p_'), cols, [str(r.o, 100).toUpperCase(), str(r.n, 300), 0, st[0], st[2], '', null, donorId,
-          GROUPS.includes(r.g) ? r.g : '', str(r.s, 100), st[1], str(r.m, 100), Number.isFinite(r.mp) ? round2(r.mp) : null,
-          (Array.isArray(r.cp) ? r.cp : []).map(x => str(x, 120)).filter(Boolean).join('\n')]);
-        n++;
-      }
-      return { donorId, count: n };
+      if (getMeta('tpl:' + key) || q('SELECT id FROM donors WHERE template_key = ?').get(key)) fail('Цей каталог уже додано', 409, 'exists');
+      const n = importCatalog(key, null);
+      if (n === null) fail('Шаблон не знайдено на сервері');
+      return { count: n };
     },
     deleteProduct(user, p) {
       const pr = getProduct(str(p.id, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
@@ -455,6 +441,41 @@ function createLogic(db, secret) {
     };
   }
 
+  // Каталог запчастин із шаблону → загальний склад (кількість 0, без донора). Повертає кількість або null.
+  function importCatalog(key, donorId) {
+    const file = path.join(TEMPLATES_DIR, key + '.json');
+    if (!fs.existsSync(file)) return null;
+    const t = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const cols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat';
+    let n = 0;
+    for (const r of t.parts || []) {
+      const st = STATES[r.c] || STATES.used;
+      insertProduct(newId('p_'), cols, [str(r.o, 100).toUpperCase(), str(r.n, 300), 0, st[0], st[2], '', null, donorId,
+        GROUPS.includes(r.g) ? r.g : '', str(r.s, 100), st[1], str(r.m, 100), Number.isFinite(r.mp) ? round2(r.mp) : null,
+        (Array.isArray(r.cp) ? r.cp : []).map(x => str(x, 120)).filter(Boolean).join('\n')]);
+      n++;
+    }
+    setMeta('tpl:' + key, new Date().toISOString());
+    return n;
+  }
+  // Під час запуску: усі шаблони з папки templates, яких ще немає в базі, додаються в загальний каталог
+  function ensureCatalog() {
+    const done = [];
+    let keys = [];
+    try { keys = fs.readdirSync(TEMPLATES_DIR).filter(f => /^[a-z0-9-]+\.json$/.test(f)).map(f => f.slice(0, -5)); } catch (e) { return done; }
+    if (!q('SELECT COUNT(*) AS c FROM users').get().c) return done;
+    for (const key of keys) {
+      if (getMeta('tpl:' + key)) continue;
+      db.transaction(() => {
+        // уже імпортовано раніше через донора-шаблон (v14) — не дублюємо
+        if (q('SELECT id FROM donors WHERE template_key = ?').get(key)) { setMeta('tpl:' + key, 'donor'); return; }
+        const n = importCatalog(key, null);
+        if (n) { bump(); done.push({ key, title: templateInfo([key])[0].title, count: n }); }
+      })();
+    }
+    return done;
+  }
+
   // назва й кількість запчастин шаблону (кеш, файл читається один раз)
   const tplCache = {};
   function templateInfo(keys) {
@@ -538,7 +559,7 @@ function createLogic(db, secret) {
     setMeta('next_deal_no', 125);
   }
 
-  return { run, snapshot, login, version, getUser, seedIfEmpty, AppError };
+  return { run, snapshot, login, version, getUser, seedIfEmpty, ensureCatalog, AppError };
 }
 
 module.exports = { createLogic, AppError };
