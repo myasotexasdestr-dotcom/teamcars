@@ -150,7 +150,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .grp span{font-size:12px;color:var(--muted);font-weight:600}
 .grp.wide{grid-column:1/-1;flex-direction:row;gap:8px;min-height:52px;background:var(--ink);color:var(--on-ink)} .grp.wide span{color:inherit;opacity:.7}
 .grp:disabled{opacity:.45}
-.crumbs{display:flex;align-items:center;flex-wrap:nowrap;white-space:nowrap;flex-shrink:0;gap:4px;font-size:13px;font-weight:600;color:var(--muted);min-width:0}
+.crumbs{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:13px;font-weight:600;color:var(--muted);min-width:0}
 .crumbs button{border:0;background:none;padding:2px 0;font:inherit;color:var(--ink2)}
 .crumbs b{color:var(--ink);font-weight:700}
 .whlinks{display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;flex-shrink:1;min-width:0}
@@ -159,6 +159,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .whlinks button.on{color:var(--ink);font-weight:800;text-decoration:underline;text-underline-offset:4px}
 .dd.compact .dd-btn{height:40px;padding:0 12px 0 14px;border-radius:20px;font-size:14px;font-weight:700;max-width:170px;gap:6px}
 .dd.compact .dd-menu{left:auto;right:0;min-width:220px}
+.dd.compact.wh .dd-btn{height:52px;border-radius:26px;padding:0 16px 0 18px}
+.dd.compact.wh .dd-menu{left:0;right:auto}
 .st-head{align-items:center}
 .seg.st button{font-size:13px;white-space:nowrap;padding:0 6px} .seg.st .cnt{margin-left:3px}
 .seg4{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:24px;background:var(--soft)}
@@ -797,7 +799,7 @@ function stFiltersHtml(){
   if(UI.whQ.trim())crumbs.push('›','<b>Пошук</b>');
   return `<div class="seg st" role="radiogroup" aria-label="Наявність"><button type="button" role="radio" aria-checked="${UI.stAvail==='all'}" class="${UI.stAvail==='all'?'on':''}" data-act="stAvail" data-v="all">Всі запчастини<span class="cnt">(${pool.length})</span></button><button type="button" role="radio" aria-checked="${UI.stAvail==='in'}" class="${UI.stAvail==='in'?'on':''}" data-act="stAvail" data-v="in">В наявності<span class="cnt">(${inCnt})</span></button></div>
   <div class="row between" style="gap:12px;padding:0 4px"><nav class="crumbs" aria-label="Навігація">${crumbs.join('')}</nav>
-  ${activeWh().length>1?`<div class="whlinks" role="tablist" aria-label="Склади">${[{id:'all',name:'Усі склади'},...activeWh()].map(w=>`<button type="button" role="tab" aria-selected="${UI.whTab===w.id}" class="${UI.whTab===w.id?'on':''}" data-act="whTab" data-v="${w.id}">${esc(w.name)}</button>`).join('')}</div>`:''}</div>`;
+</div>`;
 }
 function stTilesHtml(m){
   const list=stAvailList(stPool(m),m);
@@ -857,7 +859,7 @@ VIEWS.stock=()=>{
   return `<header class="top st-head"><h1>Склад</h1><div class="row" style="gap:12px;align-items:center;min-width:0">${ddHtml('stDonor','st-donor',opts,UI.stDonor,'Всі донори').replace('class="dd"','class="dd compact"')}<button type="button" class="link" style="font-weight:700;white-space:nowrap;font-size:14px" data-act="donorEdit">+ Донор</button></div></header>
   ${stDonorHtml()}
   <label class="search">${icon('search',18)}<span class="vh">Пошук товару</span><input id="wh-q" type="search" placeholder="Пошук: назва, номер або артикул" value="${esc(UI.whQ)}" data-input="whQ" autocomplete="off"></label>
-  <button type="button" class="btn primary" style="align-self:center;padding:0 32px" data-act="newProduct">${icon('plus',18,2.2)}Товар</button>
+  <div class="row" style="justify-content:center;gap:10px;flex-wrap:wrap">${activeWh().length>1?ddHtml('stWh','st-wh',[{v:'all',l:'Усі склади'},...activeWh().map(w=>({v:w.id,l:w.name+(w.isDefault?' ★':'')}))],UI.whTab,'Усі склади').replace('class="dd"','class="dd compact wh"'):''}<button type="button" class="btn primary" style="padding:0 32px" data-act="newProduct">${icon('plus',18,2.2)}Товар</button></div>
   <div class="col" style="gap:12px" id="st-filters">${stFiltersHtml()}</div>
   <div class="list" id="wh-list">${whListHtml()}</div>`;
 };
@@ -1218,6 +1220,7 @@ A.ndQty=el=>{const i=UI.draft.items.find(x=>x.key===el.dataset.k);const avail=av
 A.ndAcct=el=>{const dr=UI.draft;dr.acct=el.dataset.v;dr.amount='';dr.touched=!prefillCur(ACC[dr.acct].currency,dr.cur);patch('#nd-pay',ndPayHtml());patch('#nd-hint',ndHint());if(dr.touched){const i=$('#nd-amt');if(i)i.focus()}};
 A.ndShip=()=>ndShip();
 A.whTab=el=>{UI.whTab=el.dataset.v;UI.stLimit=60;stRefresh()};
+DD.stWh=v=>{UI.whTab=v;UI.stLimit=60;render()};
 A.stAvail=el=>{UI.stAvail=el.dataset.v;UI.stLimit=60;stRefresh()};
 DD.stDonor=v=>{UI.stDonor=v;UI.stLimit=60;render()};
 A.stDonorGo=el=>{UI.stDonor=el.dataset.v;UI.stGroup='';UI.stSub='';UI.whQ='';UI.stLimit=60;go('stock',{},{root:true})};
