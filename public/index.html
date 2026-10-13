@@ -142,6 +142,13 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .list{display:flex;flex-direction:column;gap:8px}
 .item{background:var(--card);border-radius:22px;box-shadow:0 8px 22px rgba(30,50,80,.05);padding:10px 14px 10px 10px;display:flex;align-items:center;gap:12px;border:0;width:100%;text-align:left;color:var(--ink)}
 .item.out{opacity:.62}
+.irow{display:flex;gap:8px;align-items:stretch}
+.irow .item{flex:1;min-width:0}
+.iacts{display:flex;flex-direction:column;gap:6px;justify-content:center}
+.qa{width:44px;height:40px;border-radius:14px;border:0;background:var(--blue-bg);color:var(--blue);font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+.qa.sell{background:var(--ink);color:var(--on-ink)}
+.qa:disabled{opacity:.3}
+.hint.warn,.warnline{color:var(--warn)}
 .grp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media (min-width:700px){.grp-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .grp{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:64px;padding:14px 12px;border-radius:18px;border:0;background:var(--card);box-shadow:0 6px 18px rgba(30,50,80,.05);text-align:center;color:var(--ink);min-width:0}
@@ -451,7 +458,7 @@ async function poll(){
 const errMsg=e=>e&&e.message?e.message:'Щось пішло не так';
 
 /* ---------- UI state & routing ---------- */
-const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',stAvail:'all',stDonor:'all',stGroup:'',stSub:'',stLimit:60,prodTab:'specs',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
+const UI={route:{name:'home',params:{}},stack:[],pin:'',pinErr:'',shake:false,dealsTab:'new',dealsQ:'',whTab:'all',whQ:'',stAvail:'in',stDonor:'all',stGroup:'',stSub:'',stLimit:60,prodTab:'specs',invUser:null,invLogAll:false,draft:null,form:null,sheet:null,photoIdx:0};
 const TOP=['home','deals','stock','invest','settings'];
 function go(name,params={},opts={}){
   if(opts.root) UI.stack=[]; else if(!opts.replace) UI.stack.push(UI.route);
@@ -686,6 +693,7 @@ function ndItemsHtml(){
         <span class="muted sm">з ${avail} шт.</span>
         <label class="price-in"><span class="vh">Ціна в цій угоді</span><input type="text" inputmode="decimal" value="${esc(i.price)}" data-input="ndPrice" data-k="${i.key}"><span class="muted">${curSign(UI.draft.cur)}</span></label>
       </div>
+      ${!p.price&&p.marketPrice&&parseNum(i.price)===p.marketPrice?'<span class="sm" style="font-weight:700;color:var(--warn)">Своєї ціни немає — підставлено ринкову. Перевірте ціну.</span>':''}
       ${atMax?'<span class="sm" style="font-weight:700;color:var(--warn)">Це весь залишок на цьому складі</span>':''}${UI.draft.orig&&origOf(i.productId,i.warehouseId)?`<span class="muted xs">Було в угоді: ${origOf(i.productId,i.warehouseId)} шт.</span>`:''}
     </div>`}).join('');
 }
@@ -787,18 +795,18 @@ function stPool(m){
   if(UI.whTab!=='all')list=list.filter(p=>m.rec[p.id]||m.r[p.id]);
   return list;
 }
-const stAvailList=(pool,m)=>UI.stAvail==='in'?pool.filter(p=>m.q[p.id]>0):pool;
+const stAvailList=(pool,m)=>UI.stAvail==='in'?pool.filter(p=>m.q[p.id]>0||m.r[p.id]>0):pool;
 const grpOf=p=>GROUP[p.group]?p.group:'none';
 const grpLabel=k=>k==='none'?'Без категорії':GROUP[k].l;
 const stScope=list=>{if(!UI.stGroup)return list;list=list.filter(p=>grpOf(p)===UI.stGroup);if(UI.stSub&&UI.stSub!=='*')list=list.filter(p=>(p.sub||'Інше')===UI.stSub);return list};
 const stShowsList=()=>!!UI.whQ.trim()||(UI.stGroup&&(UI.stSub||UI.stGroup==='none'));
 function stFiltersHtml(){
   const m=stockMaps();const pool=stScope(stPool(m));
-  const inCnt=pool.filter(p=>m.q[p.id]>0).length;
+  const inCnt=pool.filter(p=>m.q[p.id]>0||m.r[p.id]>0).length;
   const crumbs=[`<button type="button" data-act="stCrumb" data-v="root">Teamcars</button>`,'›',UI.stGroup?`<button type="button" data-act="stCrumb" data-v="root">Склад</button>`:'<b>Склад</b>'];
   if(UI.stGroup){crumbs.push('›',UI.stSub?`<button type="button" data-act="stCrumb" data-v="group">${esc(grpLabel(UI.stGroup))}</button>`:`<b>${esc(grpLabel(UI.stGroup))}</b>`);if(UI.stSub)crumbs.push('›',`<b>${esc(UI.stSub==='*'?'Усі':UI.stSub)}</b>`)}
   if(UI.whQ.trim())crumbs.push('›','<b>Пошук</b>');
-  return `<div class="seg st" role="radiogroup" aria-label="Наявність"><button type="button" role="radio" aria-checked="${UI.stAvail==='all'}" class="${UI.stAvail==='all'?'on':''}" data-act="stAvail" data-v="all">Всі запчастини<span class="cnt">(${pool.length})</span></button><button type="button" role="radio" aria-checked="${UI.stAvail==='in'}" class="${UI.stAvail==='in'?'on':''}" data-act="stAvail" data-v="in">В наявності<span class="cnt">(${inCnt})</span></button></div>
+  return `<div class="seg st" role="radiogroup" aria-label="Наявність"><button type="button" role="radio" aria-checked="${UI.stAvail==='in'}" class="${UI.stAvail==='in'?'on':''}" data-act="stAvail" data-v="in">В наявності<span class="cnt">(${inCnt})</span></button><button type="button" role="radio" aria-checked="${UI.stAvail==='all'}" class="${UI.stAvail==='all'?'on':''}" data-act="stAvail" data-v="all">Весь каталог<span class="cnt">(${pool.length})</span></button></div>
   <div class="row between" style="gap:12px;padding:0 4px"><nav class="crumbs" aria-label="Навігація">${crumbs.join('')}</nav>
 </div>`;
 }
@@ -820,7 +828,7 @@ function whListHtml(){
   let list=stScope(stAvailList(stPool(m),m));
   const rank=p=>(m.q[p.id]>0?0:m.r[p.id]>0?1:2);
   list.sort((a,b)=>rank(a)-rank(b)||a.name.localeCompare(b.name,'uk'));
-  const filtered=UI.stAvail!=='all'||UI.stDonor!=='all'||UI.stGroup||UI.whTab!=='all';
+  const filtered=UI.stAvail!=='in'||UI.stDonor!=='all'||UI.stGroup||UI.whTab!=='all';
   const head=`<div class="row between muted sm" style="padding:0 4px"><span>${posWord(list.length)}</span>${filtered?'<button type="button" class="link sm" data-act="stReset">Скинути фільтри</button>':'<span>Спершу в наявності</span>'}</div>`;
   const q0=UI.whQ.trim();
   const addBtn=q0?`<button type="button" class="btn primary" style="align-self:center;max-width:100%;white-space:normal;height:auto;min-height:52px;padding:10px 20px" data-act="addFromSearch">${icon('plus',18,2.2)}<span>Додати «${esc(q0.length>40?q0.slice(0,40)+'…':q0)}»</span></button>`:'';
@@ -829,11 +837,12 @@ function whListHtml(){
   return head+shown.map(p=>{const q=m.q[p.id]||0,r=m.r[p.id]||0;
     const st=q>0?`${q} шт.${r?` · <span style="color:var(--warn)">${r} в угоді</span>`:''}`:r>0?`<span style="color:var(--warn)">В угоді · ${r} шт.</span>`:'Немає в наявності';
     const pst=pState(p);const d=p.donorId?donor(p.donorId):null;
-    return `<button type="button" class="item ${q>0?'':r>0?'held':'out'}" data-act="openProduct" data-id="${p.id}">
+    return `<div class="irow"><button type="button" class="item ${q>0?'':r>0?'held':'out'}" data-act="openProduct" data-id="${p.id}">
       <span class="thumb">${thumbImg(p)}</span>
       <span class="col grow" style="gap:2px;min-width:0"><span class="code ${p.catalogNumber?'':'none'}">${esc(p.catalogNumber||'Без номера деталі')} <span style="color:var(--dim);font-weight:600">· Арт. ${artNo(p)}</span></span><span class="name">${esc(p.name)}</span>
       <span class="sm" style="font-weight:700;color:${q>0?'var(--blue)':'var(--muted)'}">${st}${p.block?` · <span style="color:var(--ink2)">Блок ${p.block}</span>`:''} · <span style="color:${pst==='defect'?'var(--warn)':'var(--ink2)'}">${STATE_L[pst]}</span>${d&&UI.stDonor==='all'?` · <span style="color:var(--ink2)">${esc(donorName(d))}</span>`:''}</span></span>
-      <span class="col" style="align-items:flex-end;gap:0;flex-shrink:0">${p.price?`<span class="num" style="font-size:15px;font-weight:700">${money(p.price,PRICE_CUR)}</span>`:p.marketPrice?`<span class="num muted" style="font-size:14px;font-weight:700">≈ ${money(p.marketPrice,PRICE_CUR)}</span><span class="muted xs">ринкова</span>`:`<span class="muted sm">без ціни</span>`}</span></button>`}).join('')
+      <span class="col" style="align-items:flex-end;gap:0;flex-shrink:0">${p.price?`<span class="num" style="font-size:15px;font-weight:700">${money(p.price,PRICE_CUR)}</span>`:p.marketPrice?`<span class="num muted" style="font-size:14px;font-weight:700">≈ ${money(p.marketPrice,PRICE_CUR)}</span><span class="muted xs">ринкова</span>`:`<span class="muted sm">без ціни</span>`}</span></button>
+      <div class="iacts"><button type="button" class="qa" data-act="quickAdd" data-id="${p.id}" aria-label="Додати 1 шт. на склад: ${esc(p.name)}">+1</button><button type="button" class="qa sell" data-act="sellProduct" data-id="${p.id}" aria-label="Продати: ${esc(p.name)}" ${q>0?'':'disabled'}>${icon('deals',17,2)}</button></div></div>`}).join('')
     +(list.length>shown.length?`<button type="button" class="btn ghost" style="align-self:center" data-act="stMore">Показати ще ${Math.min(60,list.length-shown.length)} з ${list.length-shown.length}</button>`:'')
     +(q0?`<button type="button" class="link" style="align-self:center;padding:12px;font-size:14px" data-act="addFromSearch">Немає потрібного? Додати новий товар</button>`:'');
 }
@@ -1231,8 +1240,10 @@ A.stGroup=el=>{UI.stGroup=el.dataset.v;UI.stSub='';UI.stLimit=60;stRefresh();win
 A.stCrumb=el=>{if(el.dataset.v==='root'){UI.stGroup='';UI.stSub=''}else UI.stSub='';UI.stLimit=60;stRefresh()};
 A.stSub=el=>{UI.stSub=el.dataset.v;UI.stLimit=60;stRefresh();window.scrollTo(0,0)};
 A.stMore=()=>{UI.stLimit+=60;patch('#wh-list',whListHtml())};
-A.stReset=()=>{UI.stAvail='all';UI.stDonor='all';UI.stGroup='';UI.stSub='';UI.whTab='all';UI.stLimit=60;stRefresh()};
+A.stReset=()=>{UI.stAvail='in';UI.stDonor='all';UI.stGroup='';UI.stSub='';UI.whTab='all';UI.stLimit=60;stRefresh()};
 A.prodTab=el=>{UI.prodTab=el.dataset.v;render()};
+A.quickAdd=async el=>{const p=prod(el.dataset.id);const w=UI.whTab!=='all'&&wh(UI.whTab)?.active?wh(UI.whTab):defaultWh();if(!w)return toast('Немає активного складу');el.disabled=true;
+  try{await act('addStock',{productId:p.id,warehouseId:w.id,quantity:1});stRefresh();toast(`+1 шт. · ${p.name.slice(0,40)} → ${w.name} (тепер ${totalQty(p.id)} шт.)`)}catch(e){toast(errMsg(e))}finally{el.disabled=false}};
 A.supplyStart=el=>{UI.supply={donorId:el.dataset.id,wid:(defaultWh()||{}).id,q:'',items:[],error:''};go('supply');setTimeout(()=>{const i=$('#sp-q');if(i)i.focus()},50)};
 A.supplyWh=el=>{UI.supply.wid=el.dataset.v;render()};
 A.supplyAdd=el=>{const p=prod(el.dataset.id);UI.supply.items.push({productId:p.id,quantity:1,price:p.price?String(p.price):''});UI.supply.error='';patch('#sp-err','');supplyRefresh()};
@@ -1242,7 +1253,7 @@ A.supplyNew=()=>{UI.stDonor=UI.supply.donorId;startForm(null,UI.supply.q)};
 A.supplySave=async()=>{const sp=UI.supply;const err=m=>{sp.error=m;patch('#sp-err',esc(m))};
   for(const i of sp.items){if(String(i.price).trim()!==''&&!(parseNum(i.price)>=0))return err(`«${prod(i.productId).name}»: ціна має бути числом`)}
   try{const r=await act('donorSupply',{donorId:sp.donorId,warehouseId:sp.wid,items:sp.items.map(i=>({productId:i.productId,quantity:i.quantity,price:String(i.price).trim()===''?null:parseNum(i.price)}))});
-    UI.stDonor=sp.donorId;UI.stGroup='';UI.stSub='';UI.stAvail='all';UI.supply=null;go('stock',{},{root:true});toast(`Оприбутковано ${r.units} шт. (${posWord(r.positions)})`)}catch(e){if(e.code!=='unauthorized')err(errMsg(e))}};
+    UI.stDonor=sp.donorId;UI.stGroup='';UI.stSub='';UI.stAvail='in';UI.supply=null;go('stock',{},{root:true});toast(`Оприбутковано ${r.units} шт. (${posWord(r.positions)})`)}catch(e){if(e.code!=='unauthorized')err(errMsg(e))}};
 A.donorEdit=el=>{const d=el.dataset.id?donor(el.dataset.id):null;openSheet({type:'donor',id:d?d.id:null,cost:d&&d.cost!=null?String(d.cost):'',make:d?d.make:'',model:d?d.model:'',years:d?d.years:'',engine:d?d.engine:'',color:d?d.color:'',vin:d?d.vin:'',notes:d?d.notes:'',error:''})};
 A.donorSave=async()=>{const s=UI.sheet;if(!s.make.trim()){s.error='Вкажіть марку авто';return renderSheet()}
   try{const cost=String(s.cost||'').trim();if(cost&&!(parseNum(cost)>=0)){s.error='Вартість донора має бути числом';return renderSheet()}
