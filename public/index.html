@@ -144,7 +144,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .item.out{opacity:.62}
 .grp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media (min-width:700px){.grp-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.grp{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:64px;padding:10px 12px;border-radius:18px;border:0;background:var(--card);box-shadow:0 6px 18px rgba(30,50,80,.05);text-align:center;color:var(--ink);min-width:0}
+.grp{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:64px;padding:14px 12px;border-radius:18px;border:0;background:var(--card);box-shadow:0 6px 18px rgba(30,50,80,.05);text-align:center;color:var(--ink);min-width:0}
+.grp .gi{display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:15px;background:var(--blue-bg);color:var(--blue);margin-bottom:4px}
 .grp b{font-size:14px;font-weight:700;line-height:1.25}
 .grp span{font-size:12px;color:var(--muted);font-weight:600}
 .grp.wide{grid-column:1/-1;flex-direction:row;gap:8px;min-height:52px;background:var(--ink);color:var(--on-ink)} .grp.wide span{color:inherit;opacity:.7}
@@ -352,6 +353,19 @@ const GROUPS=[
   {k:'transmission',l:'Трансмісія',subs:['Коробка передач','Передній міст','Задній міст','Карданний вал']},
   {k:'electrics',l:'Електрика',subs:['АКБ','Антени','Блок запобіжників','Датчики','Камери','Сигнал','Ключі','Блоки керування','Проводка','Радар','Щиток приладів']}];
 const GROUP=Object.fromEntries(GROUPS.map(g=>[g.k,g]));
+const GROUP_ICONS={
+  doors:'M6 21V10l5-6h8v17H6z M6 12h13 M15 15h2',
+  engine:'M4 10h2V8h3V6h6v2h2l2 2h2v6h-2l-2 2H8l-2-2H4v-6z M10 6V4h4v2 M10 12h4',
+  interior:'M8 3h4l1.5 10H19l1 4H9.5L7 13 8 3z M9.5 17l-1 4 M18 17l1 4',
+  wheels:'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7z M12 3v5.5 M12 15.5V21 M3 12h5.5 M15.5 12H21',
+  body:'M2 15v-3l3-5h9l5 5h3v3h-2 M8 15h8 M4 15a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M16 15a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M9 7v5 M2 12h20',
+  fluids:'M12 3c3 4 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-7 6-11z M9 14a3 3 0 0 0 3 3',
+  suspension:'M12 2v3 M12 19v3 M7 5h10 M7 19h10 M8 7.5l8 2-8 2 8 2-8 2 8 1.5',
+  brakes:'M11 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M11 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M16 3.5c2.6 1.4 4.5 4.5 4.5 8s-1.9 6.6-4.5 8',
+  transmission:'M6 6v12 M12 6v12 M18 6v6H6 M6 4.5a1.5 1.5 0 1 0 0 .01 M12 4.5a1.5 1.5 0 1 0 0 .01 M18 4.5a1.5 1.5 0 1 0 0 .01 M6 19.5a1.5 1.5 0 1 0 0 .01 M12 19.5a1.5 1.5 0 1 0 0 .01',
+  electrics:'M13 2L4 14h7l-1 8 9-12h-7l1-8z',
+  none:'M4 7l8-4 8 4v10l-8 4-8-4V7z M4 7l8 4 8-4 M12 11v10'};
+const grpIcon=(k,sz=28)=>`<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${GROUP_ICONS[k]||GROUP_ICONS.none}"/></svg>`;
 const STATES=[['new','Новий оригінал'],['analog','Новий аналог'],['used','Б/У'],['defect','Б/У дефект']];
 const STATE_L=Object.fromEntries(STATES);
 const pState=p=>p.condition==='new'?(p.analog?'analog':'new'):(p.defective?'defect':'used');
@@ -782,12 +796,12 @@ function stTilesHtml(m){
   if(!UI.stGroup){
     const gc={};list.forEach(p=>{const k=grpOf(p);gc[k]=(gc[k]||0)+1});
     const keys=[...GROUPS.map(g=>g.k),...(gc.none?['none']:[])];
-    return `<div class="grp-grid">${keys.map(k=>{const n=gc[k]||0;return `<button type="button" class="grp" data-act="stGroup" data-v="${k}" ${n?'':'disabled'}><b>${esc(grpLabel(k))}</b><span>${n}</span></button>`}).join('')}</div>`;
+    return `<div class="grp-grid">${keys.map(k=>{const n=gc[k]||0;return `<button type="button" class="grp" data-act="stGroup" data-v="${k}" ${n?'':'disabled'}><i class="gi">${grpIcon(k)}</i><b>${esc(grpLabel(k))}</b><span>${n}</span></button>`}).join('')}</div>`;
   }
   const inG=list.filter(p=>grpOf(p)===UI.stGroup);const sc={};inG.forEach(p=>{const k=p.sub||'Інше';sc[k]=(sc[k]||0)+1});
   const g=GROUP[UI.stGroup];const order=[...g.subs,...Object.keys(sc).filter(k=>!g.subs.includes(k)).sort()].filter(k=>sc[k]);
   if(!inG.length)return '<div class="empty">У цій групі поки нічого немає</div>';
-  return `<div class="grp-grid"><button type="button" class="grp wide" data-act="stSub" data-v="*"><b>Усі запчастини групи</b><span>${inG.length}</span></button>${order.map(k=>`<button type="button" class="grp" data-act="stSub" data-v="${esc(k)}"><b>${esc(k)}</b><span>${sc[k]}</span></button>`).join('')}</div>`;
+  return `<div class="grp-grid"><button type="button" class="grp wide" data-act="stSub" data-v="*">${grpIcon(UI.stGroup,20)}<b>Усі запчастини групи</b><span>${inG.length}</span></button>${order.map(k=>`<button type="button" class="grp" data-act="stSub" data-v="${esc(k)}"><b>${esc(k)}</b><span>${sc[k]}</span></button>`).join('')}</div>`;
 }
 function whListHtml(){
   const m=stockMaps();
