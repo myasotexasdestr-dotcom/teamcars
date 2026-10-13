@@ -178,6 +178,11 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .compat li{padding:8px 0;border-top:1px solid var(--line);font-size:14px;font-weight:600}
 .compat li:first-child{border-top:0}
 .compat{list-style:none;margin:0;padding:0}
+.scan-ov{position:fixed;inset:0;z-index:100;background:#000;display:flex;align-items:center;justify-content:center}
+.scan-ov video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scan-frame{position:relative;width:62vw;max-width:280px;aspect-ratio:1;border:3px solid #fff;border-radius:24px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+.scan-x{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:#fff}
+.search .scan-btn{border:0;background:none;color:var(--ink2);display:flex;padding:6px;margin-right:-6px}
 .ex-badge{position:absolute;left:10px;top:10px;background:rgba(20,30,50,.72);color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:10px}
 .photo-main{position:relative}
 .thumb img.ex{opacity:.85}
@@ -318,6 +323,8 @@ const initials=name=>String(name).split(/\s+/).filter(Boolean).slice(0,2).map(w=
 
 
 const ICONS={
+  scan:'M4 8V5a1 1 0 0 1 1-1h3 M16 4h3a1 1 0 0 1 1 1v3 M20 16v3a1 1 0 0 1-1 1h-3 M8 20H5a1 1 0 0 1-1-1v-3 M7 12h10',
+  qr:'M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h2v2h-2z M18 18h2v2h-2z M14 18h2 M18 14h2',
   home:'M3 10l9-6 9 6v10H3z M9 20v-6h6v6',
   deals:'M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6 M9 16h3',
   stock:'M3 7l9-4 9 4-9 4-9-4z M3 7v10l9 4 9-4V7 M12 11v10',
@@ -455,7 +462,7 @@ async function act(type,payload){
 }
 async function uploadPhoto(dataUrl){return (await http('/api/photos',{method:'POST',body:{dataUrl}})).url}
 function logoutLocal(msg){ME=null;DB=null;MEM_TOKEN=null;store.del(LS_TOKEN);UI.stack=[];UI.route={name:'home',params:{}};UI.sheet=null;UI.draft=null;UI.form=null;UI.pin='';UI.pinErr=msg||'';render()}
-const canAutoRender=()=>!UI.sheet&&!['newDeal','productForm','supply'].includes(UI.route.name)&&!(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
+const canAutoRender=()=>!UI.sheet&&!SCAN&&!['newDeal','productForm','supply','invent'].includes(UI.route.name)&&!(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
 async function poll(){
   if(!ME||BUSY||document.hidden) return;
   try{const v=await http('/api/version');if(v.version!==VERSION){applyState(await http('/api/state'));if(canAutoRender())render();else STALE=true}}catch(e){}
@@ -814,7 +821,7 @@ function stFiltersHtml(){
   if(UI.stGroup){crumbs.push('›',UI.stSub?`<button type="button" data-act="stCrumb" data-v="group">${esc(grpLabel(UI.stGroup))}</button>`:`<b>${esc(grpLabel(UI.stGroup))}</b>`);if(UI.stSub)crumbs.push('›',`<b>${esc(UI.stSub==='*'?'Усі':UI.stSub)}</b>`)}
   if(UI.whQ.trim())crumbs.push('›','<b>Пошук</b>');
   return `<div class="seg st" role="radiogroup" aria-label="Наявність"><button type="button" role="radio" aria-checked="${UI.stAvail==='in'}" class="${UI.stAvail==='in'?'on':''}" data-act="stAvail" data-v="in">В наявності<span class="cnt">(${inCnt})</span></button><button type="button" role="radio" aria-checked="${UI.stAvail==='all'}" class="${UI.stAvail==='all'?'on':''}" data-act="stAvail" data-v="all">Весь каталог<span class="cnt">(${pool.length})</span></button></div>
-  <div class="row between" style="gap:12px;padding:0 4px"><nav class="crumbs" aria-label="Навігація">${crumbs.join('')}</nav>
+  <div class="row between" style="gap:12px;padding:0 4px"><nav class="crumbs" aria-label="Навігація">${crumbs.join('')}</nav><button type="button" class="link sm" style="white-space:nowrap;flex-shrink:0" data-act="go" data-v="invent">Інвентаризація</button>
 </div>`;
 }
 function stTilesHtml(m){
@@ -877,7 +884,7 @@ VIEWS.stock=()=>{
   const opts=[{v:'all',l:'Всі донори'},...ds.map(d=>({v:d.id,l:donorName(d)})),...(ds.length&&noDonor?[{v:'none',l:'Без донора'}]:[])];
   return `<header class="top st-head"><h1>Склад</h1><div class="row" style="gap:12px;align-items:center;min-width:0">${ddHtml('stDonor','st-donor',opts,UI.stDonor,'Всі донори').replace('class="dd"','class="dd compact"')}<button type="button" class="link" style="font-weight:700;white-space:nowrap;font-size:14px" data-act="donorEdit">+ Донор</button></div></header>
   ${stDonorHtml()}
-  <label class="search">${icon('search',18)}<span class="vh">Пошук товару</span><input id="wh-q" type="search" placeholder="Пошук: назва, номер або артикул" value="${esc(UI.whQ)}" data-input="whQ" autocomplete="off"></label>
+  <label class="search">${icon('search',18)}<span class="vh">Пошук товару</span><input id="wh-q" type="search" placeholder="Пошук: назва, номер або артикул" value="${esc(UI.whQ)}" data-input="whQ" autocomplete="off"><button type="button" class="scan-btn" data-act="scanStock" aria-label="Сканувати етикетку">${icon('scan',22,2)}</button></label>
   <div class="row" style="justify-content:center;gap:10px;flex-wrap:wrap">${activeWh().length>1?ddHtml('stWh','st-wh',[{v:'all',l:'Усі склади'},...activeWh().map(w=>({v:w.id,l:w.name+(w.isDefault?' ★':'')}))],UI.whTab,'Усі склади').replace('class="dd"','class="dd compact wh"'):''}<button type="button" class="btn primary" style="padding:0 32px" data-act="newProduct">${icon('plus',18,2.2)}Товар</button></div>
   <div class="col" style="gap:12px" id="st-filters">${stFiltersHtml()}</div>
   <div class="list" id="wh-list">${whListHtml()}</div>`;
@@ -895,7 +902,7 @@ VIEWS.product=({id})=>{
   <div class="split"><div class="stack">
   <section class="card" style="padding:12px;gap:14px">
     <div class="photo-main">${photos.length?`<img src="${photos[idx]}" alt="${esc(p.name)}"><span class="chip dark count">${idx+1} / ${photos.length}</span>`:p.exImg?`<img src="${esc(p.exImg)}" alt="Приклад: ${esc(p.name)}" referrerpolicy="no-referrer" onerror="if(this.nextElementSibling)this.nextElementSibling.remove();this.remove()"><span class="ex-badge">Приклад</span>`:`<div class="col" style="align-items:center;gap:6px;font-size:13px">${icon('photo',40,1.3)}Фото ще немає</div>`}</div>
-    ${p.active?`<div class="row between" style="gap:8px;padding:0 4px;flex-wrap:wrap"><label class="btn accent small" for="snap-file" style="cursor:pointer">${icon('photo',16,2)}Сфотографувати<input id="snap-file" type="file" accept="image/*" capture="environment" multiple class="vh" data-change="snapPhotos" data-id="${p.id}"></label><button type="button" class="btn ghost small" data-act="shareProduct" data-id="${p.id}">Поділитися</button></div>`:''}
+    ${p.active?`<div class="row between" style="gap:8px;padding:0 4px;flex-wrap:wrap"><label class="btn accent small" for="snap-file" style="cursor:pointer">${icon('photo',16,2)}Сфотографувати<input id="snap-file" type="file" accept="image/*" capture="environment" multiple class="vh" data-change="snapPhotos" data-id="${p.id}"></label><button type="button" class="btn ghost small" data-act="shareProduct" data-id="${p.id}">Поділитися</button><button type="button" class="btn ghost small" data-act="printLabel" data-id="${p.id}">${icon('qr',16,2)}Етикетка</button></div>`:''}
     ${photos.length>1?`<div class="thumbs">${photos.map((ph,i)=>`<button type="button" class="${i===idx?'on':''}" data-act="photoIdx" data-v="${i}" aria-label="Фото ${i+1}"><img src="${ph}" alt=""></button>`).join('')}</div>`:''}
     <div class="col" style="gap:6px;padding:0 6px">
       <span class="code ${p.catalogNumber?'':'none'}" style="font-size:13px">${esc(p.catalogNumber||'Без номера деталі')} <span style="color:var(--dim);font-weight:600">· Арт. ${artNo(p)}</span></span>
@@ -954,6 +961,94 @@ function dealReturnsHtml(d){
   return `<section class="card" style="gap:2px"><div class="card-head" style="padding-bottom:6px"><h2>Повернення</h2><span class="muted sm">${rs.reduce((s,r)=>s+r.quantity,0)} шт. · ${money(rs.reduce((s,r)=>s+r.value,0),cur)}</span></div>
   <div class="lines">${rs.map(r=>{const p=prod(r.productId);return `<div><div class="col grow"><span style="font-size:13px;font-weight:700">${esc(p?p.name:'—')}</span><span class="muted xs">${fmtDT(r.at)} · ${esc((user(r.userId)||{}).name||'—')} · ${esc((wh(r.warehouseId)||{}).name||'—')}${r.reason?' · '+esc(r.reason):''}${r.refund?` · повернуто ${money(r.refund,ACC[r.accountId].currency)} з ${esc(ACC[r.accountId].name)}`:''}</span></div><b class="num">${r.quantity} шт.</b></div>`}).join('')}</div></section>`;
 }
+/* Мінімальний QR-кодер: byte mode, рівень корекції M, версії 1–4, маска 0 */
+function qrMatrix(text){
+  const data=Array.from(new TextEncoder().encode(text));
+  const V=[null,{t:26,d:16,a:[]},{t:44,d:28,a:[6,18]},{t:70,d:44,a:[6,22]},{t:100,d:64,a:[6,26]}];
+  let ver=1;while(ver<=4&&data.length+2>V[ver].d)ver++;if(ver>4)throw new Error('QR: забагато даних');
+  const {t:total,d:dcw,a:al}=V[ver];const n=17+4*ver;
+  // біти даних
+  const bits=[];const put=(v,l)=>{for(let i=l-1;i>=0;i--)bits.push((v>>>i)&1)};
+  put(4,4);put(data.length,8);data.forEach(b=>put(b,8));
+  for(let i=0;i<4&&bits.length<dcw*8;i++)bits.push(0);
+  while(bits.length%8)bits.push(0);
+  const cw=[];for(let i=0;i<bits.length;i+=8)cw.push(parseInt(bits.slice(i,i+8).join(''),2));
+  for(let p=0;cw.length<dcw;p++)cw.push(p%2?0x11:0xEC);
+  // Reed–Solomon
+  const EXP=new Array(512),LOG=new Array(256);let x=1;for(let i=0;i<255;i++){EXP[i]=x;LOG[x]=i;x<<=1;if(x&256)x^=0x11d}for(let i=255;i<512;i++)EXP[i]=EXP[i-255];
+  const mul=(a,b)=>a&&b?EXP[LOG[a]+LOG[b]]:0;const ecn=total-dcw;
+  let gen=[1];for(let i=0;i<ecn;i++){const g=new Array(gen.length+1).fill(0);gen.forEach((c,j)=>{g[j]^=mul(c,1);g[j+1]^=mul(c,EXP[i])});gen=g}
+  const rem=new Array(ecn).fill(0);cw.forEach(c=>{const f=c^rem[0];rem.shift();rem.push(0);for(let j=0;j<ecn;j++)rem[j]^=mul(gen[j+1],f)});
+  const all=[...cw,...rem];
+  // матриця
+  const M=Array.from({length:n},()=>new Array(n).fill(null));
+  const finder=(r,c)=>{for(let i=-1;i<=7;i++)for(let j=-1;j<=7;j++){const y=r+i,x2=c+j;if(y<0||x2<0||y>=n||x2>=n)continue;const on=i>=0&&i<=6&&j>=0&&j<=6&&(i===0||i===6||j===0||j===6||(i>=2&&i<=4&&j>=2&&j<=4));M[y][x2]=on}};
+  finder(0,0);finder(0,n-7);finder(n-7,0);
+  for(let i=8;i<n-8;i++){M[6][i]=i%2===0;M[i][6]=i%2===0}
+  if(al.length){const c=al[1];for(let i=-2;i<=2;i++)for(let j=-2;j<=2;j++)M[c+i][c+j]=Math.max(Math.abs(i),Math.abs(j))!==1}
+  // формат (M=00, маска 0)
+  let fmt=0;{const d=(0<<3)|0;let v=d<<10;for(let i=14;i>=10;i--)if(v>>i&1)v^=0x537<<(i-10);fmt=((d<<10)|v)^0x5412}
+  const fb=i=>!!((fmt>>i)&1);
+  for(let i=0;i<=5;i++)M[i][8]=fb(i);M[7][8]=fb(6);M[8][8]=fb(7);M[8][7]=fb(8);
+  for(let i=9;i<15;i++)M[8][14-i]=fb(i);
+  for(let i=0;i<8;i++)M[8][n-1-i]=fb(i);
+  for(let i=8;i<15;i++)M[n-15+i][8]=fb(i);
+  M[n-8][8]=true;
+  // розміщення даних
+  const db=[];all.forEach(c=>{for(let i=7;i>=0;i--)db.push((c>>i)&1)});let k=0;
+  for(let right=n-1;right>=1;right-=2){if(right===6)right=5;for(let vi=0;vi<n;vi++){for(let j=0;j<2;j++){const c=right-j;const up=((right+1)&2)===0;const r=up?n-1-vi:vi;if(M[r][c]!==null)continue;let bit=k<db.length?db[k]:0;k++;if((r+c)%2===0)bit^=1;M[r][c]=!!bit}}}
+  return M;
+}
+function qrSvg(text,px=4){const M=qrMatrix(text);const n=M.length,q=4,s=(n+2*q);let d='';M.forEach((row,r)=>row.forEach((v,c)=>{if(v)d+=`M${c+q} ${r+q}h1v1h-1z`}));return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s*px}" height="${s*px}" shape-rendering="crispEdges"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`}
+
+/* етикетки */
+const artCode=p=>'TC:'+artNo(p);
+function labelHtml(p){return `<div class="lbl-card"><div class="qr">${qrSvg(artCode(p),3)}</div><div class="txt"><b>Арт. ${artNo(p)}</b><span class="oem">${esc(p.catalogNumber||'')}</span><span class="nm">${esc(p.name)}</span><span>${STATE_L[pState(p)]}${p.block?' · Блок '+p.block:''}</span></div></div>`}
+function printLabels(list){
+  const css='@page{size:58mm 40mm;margin:0}body{margin:0;font-family:Arial,sans-serif}.lbl-card{width:58mm;height:40mm;box-sizing:border-box;padding:2mm;display:flex;gap:2mm;align-items:center;page-break-after:always;overflow:hidden}.qr svg{width:24mm;height:24mm}.txt{display:flex;flex-direction:column;gap:.6mm;font-size:7.5pt;line-height:1.15;min-width:0}.txt b{font-size:10pt}.oem{font-weight:700}.nm{max-height:4.2em;overflow:hidden}';
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Етикетки</title><style>${css}</style></head><body>${list.map(labelHtml).join('')}</body></html>`;
+  const f=document.createElement('iframe');f.style.cssText='position:fixed;width:0;height:0;border:0;right:0;bottom:0';document.body.appendChild(f);
+  f.srcdoc=html;f.onload=()=>{try{f.contentWindow.focus();f.contentWindow.print()}catch(e){toast('Друк недоступний у цьому браузері')}setTimeout(()=>f.remove(),60000)};
+}
+/* сканер */
+let SCAN=null;
+function startScan(onCode){
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg&&tg.initData&&tg.showScanQrPopup&&tg.isVersionAtLeast&&tg.isVersionAtLeast('6.4')){tg.showScanQrPopup({text:'Наведіть камеру на етикетку'},t=>{onCode(String(t||''));return true});return}
+  if(!('BarcodeDetector' in window)||!navigator.mediaDevices){toast('Сканер працює в Telegram або в Chrome на Android. Введіть артикул у пошук.');return}
+  const root=document.createElement('div');root.className='scan-ov';root.innerHTML='<video playsinline muted></video><div class="scan-frame"></div><button type="button" class="btn ghost scan-x">Закрити</button>';document.body.appendChild(root);
+  const v=root.querySelector('video');let stop=false;const close=()=>{stop=true;try{v.srcObject&&v.srcObject.getTracks().forEach(t=>t.stop())}catch(e){}root.remove();SCAN=null};
+  root.querySelector('.scan-x').onclick=close;SCAN=close;
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(async st=>{v.srcObject=st;await v.play();const det=new BarcodeDetector({formats:['qr_code','code_128','ean_13']});
+    const tick=async()=>{if(stop)return;try{const r=await det.detect(v);if(r&&r.length){close();onCode(r[0].rawValue);return}}catch(e){}setTimeout(tick,250)};tick()}).catch(()=>{close();toast('Немає доступу до камери')});
+}
+function productByCode(t){t=String(t).trim();const m=t.match(/^TC:?(\d{1,8})$/i);if(m){const a=Number(m[1]);return activeProducts().find(p=>p.art===a)||null}
+  const c=normCode(t);if(c.length>=4){const l=activeProducts().filter(p=>normCode(p.catalogNumber)===c);if(l.length===1)return l[0]}return null}
+/* інвентаризація */
+function invList(){const iv=UI.inv;return activeProducts().filter(p=>(p.block===iv.block&&invQty(p.id,iv.wid)>0)||iv.extra.includes(p.id))}
+function invRowsHtml(){const iv=UI.inv;const list=invList();
+  if(!list.length)return '<div class="empty" style="padding:14px">У цьому блоці за обліком нічого немає. Знайдіть або відскануйте те, що лежить тут.</div>';
+  return list.map(p=>{const sys=invQty(p.id,iv.wid);const n=iv.counts[p.id]??sys;const d=n-sys;return `<div class="col" style="gap:6px;padding:10px 0;border-top:1px solid var(--line)"><div class="row between gap"><div class="col" style="min-width:0;gap:1px"><b style="font-size:14px">${esc(p.name)}</b><span class="muted xs">Арт. ${artNo(p)} · ${esc(p.catalogNumber||'без номера')} · за обліком ${sys} шт.${p.block&&p.block!==iv.block?' · зараз Блок '+p.block:''}</span></div>${d?`<span class="chip ${d<0?'warn':'ok'}">${d>0?'+':''}${d}</span>`:'<span class="chip">✓</span>'}</div>
+  <div class="stepper" style="align-self:flex-start"><button type="button" data-act="invQty" data-id="${p.id}" data-d="-1" ${n>0?'':'disabled'} aria-label="Менше">−</button><span class="v">${n}</span><button type="button" class="plus" data-act="invQty" data-id="${p.id}" data-d="1" aria-label="Більше">+</button></div></div>`}).join('')}
+function invResHtml(){const iv=UI.inv;const toks=iv.q.toLowerCase().split(/\s+/).filter(Boolean);if(!toks.length)return '';const inL=new Set(invList().map(p=>p.id));
+  const l=activeProducts().filter(p=>!inL.has(p.id)&&toks.every(t=>hay(p).includes(t))).slice(0,15);
+  return l.length?`<div class="res">${l.map(p=>`<div><div class="col grow" style="min-width:0"><span class="name" style="white-space:normal">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'')} · ${invQty(p.id,iv.wid)} шт.${p.block?' · Блок '+p.block:''}</span></div><button type="button" class="btn primary small" data-act="invAdd" data-id="${p.id}">Тут</button></div>`).join('')}</div>`:'<span class="muted sm">Нічого не знайдено</span>'}
+const invDiffs=()=>invList().filter(p=>(UI.inv.counts[p.id]??invQty(p.id,UI.inv.wid))!==invQty(p.id,UI.inv.wid)).length;
+VIEWS.invent=()=>{
+  const iv=UI.inv||(UI.inv={wid:(defaultWh()||{}).id,block:1,counts:{},extra:[],q:''});if(!wh(iv.wid)?.active)iv.wid=(defaultWh()||{}).id;
+  const last=(DB.invChecks||{})[iv.wid+':'+iv.block];
+  return `${subhead('Інвентаризація')}
+  <div class="grid2">${activeWh().length>1?`<div class="field"><span class="lbl">Склад</span>${ddHtml('invWh','inv-wh',activeWh().map(w=>({v:w.id,l:w.name})),iv.wid,'')}</div>`:''}<div class="field"><span class="lbl">Блок</span>${ddHtml('invBlock','inv-block',BLOCKS.map(n=>({v:String(n),l:'Блок '+n})),String(iv.block),'')}</div></div>
+  <span class="muted sm">${last?`Остання перевірка: ${fmtDT(last.at)} · ${esc((user(last.by)||{}).name||'')} · розбіжностей ${last.diffs}`:'Цей блок ще не перевіряли'}</span>
+  <section class="card" style="gap:0"><div class="card-head" style="padding-bottom:6px"><h2>Лежить у блоці</h2><button type="button" class="link sm" data-act="invLabels">${icon('qr',14,2)} Етикетки</button></div><div id="inv-rows">${invRowsHtml()}</div></section>
+  <section class="card" style="gap:10px"><h2>Знайшли тут щось ще?</h2>
+    <div class="row" style="gap:8px"><label class="search grow">${icon('search',18)}<span class="vh">Пошук</span><input type="search" placeholder="Назва, номер або артикул" value="${esc(iv.q)}" data-input="invQ" autocomplete="off"></label><button type="button" class="round" data-act="invScan" aria-label="Сканувати">${icon('scan',20,2)}</button></div>
+    <div id="inv-res">${invResHtml()}</div></section>
+  <button type="button" class="btn primary" style="height:58px;border-radius:29px" data-act="invSave" id="inv-save">Зберегти перевірку${invDiffs()?` · ${invDiffs()} розбіжн.`:''}</button>
+  <span class="muted sm" style="text-align:center;margin-top:-6px">Розбіжності запишуться в журнал руху товару як корекція. Не рахуйте запчастини, відкладені під неоплачені угоди — вони вже списані зі складу.</span>`;
+};
+const invRefresh=()=>{patch('#inv-rows',invRowsHtml());patch('#inv-res',invResHtml());const b=$('#inv-save');if(b)b.textContent='Зберегти перевірку'+(invDiffs()?` · ${invDiffs()} розбіжн.`:'')};
+
 /* report */
 const PERIODS=[['today','Сьогодні'],['week','7 днів'],['month','Цей місяць'],['prev','Минулий місяць'],['year','Цей рік'],['all','Усе']];
 function periodRange(k){const n=new Date();const d0=new Date(n.getFullYear(),n.getMonth(),n.getDate());
@@ -1331,6 +1426,17 @@ A.stSub=el=>{UI.stSub=el.dataset.v;UI.stLimit=60;stRefresh();window.scrollTo(0,0
 A.stMore=()=>{UI.stLimit+=60;patch('#wh-list',whListHtml())};
 A.stReset=()=>{UI.stAvail='in';UI.stDonor='all';UI.stGroup='';UI.stSub='';UI.whTab='all';UI.stLimit=60;stRefresh()};
 A.prodTab=el=>{UI.prodTab=el.dataset.v;render()};
+A.printLabel=el=>printLabels([prod(el.dataset.id)]);
+A.scanStock=()=>startScan(t=>{const p=productByCode(t);if(p){UI.photoIdx=0;UI.prodTab='specs';go('product',{id:p.id})}else{UI.whQ=t.replace(/^TC:/i,'');render();toast('Точного збігу немає — показую пошук')}});
+A.invScan=()=>startScan(t=>{const p=productByCode(t);if(!p){UI.inv.q=t;invRefresh();return toast('Не знайдено — перевірте пошуком')}const iv=UI.inv;iv.scanned=iv.scanned||{};
+  if(!invList().some(x=>x.id===p.id))iv.extra.push(p.id);
+  if(!iv.scanned[p.id]){iv.scanned[p.id]=1;iv.counts[p.id]=1}else{iv.scanned[p.id]++;iv.counts[p.id]=(iv.counts[p.id]||0)+1}
+  invRefresh();toast(`${p.name.slice(0,40)} · нараховано ${iv.counts[p.id]} шт.`)});
+A.invQty=el=>{const iv=UI.inv,id=el.dataset.id;iv.counts[id]=Math.max(0,(iv.counts[id]??invQty(id,iv.wid))+Number(el.dataset.d));invRefresh()};
+A.invAdd=el=>{const iv=UI.inv,id=el.dataset.id;if(!iv.extra.includes(id))iv.extra.push(id);if(iv.counts[id]==null||iv.counts[id]===0)iv.counts[id]=Math.max(1,invQty(id,iv.wid));iv.q='';render()};
+A.invLabels=()=>{const l=invList();if(!l.length)return toast('У блоці немає позицій');printLabels(l)};
+A.invSave=async()=>{const iv=UI.inv;const list=invList();if(!list.length)return toast('Немає позицій для перевірки');
+  try{const r=await act('inventoryBlock',{warehouseId:iv.wid,block:iv.block,counts:list.map(p=>({productId:p.id,quantity:iv.counts[p.id]??invQty(p.id,iv.wid)}))});UI.inv={wid:iv.wid,block:iv.block,counts:{},extra:[],q:''};render();toast(r.diffs?`Збережено · ${r.diffs} розбіжн. записано в журнал`:'Збережено · розбіжностей немає')}catch(e){toast(errMsg(e))}};
 A.repPeriod=el=>{UI.repPeriod=el.dataset.v;render()};
 A.shareProduct=async el=>{const p=prod(el.dataset.id);
   const text=[p.name,p.catalogNumber?'Номер: '+p.catalogNumber:'','Стан: '+STATE_L[pState(p)],p.price?'Ціна: '+money(p.price,PRICE_CUR):'',totalQty(p.id)>0?'В наявності':''].filter(Boolean).join('\n');
@@ -1418,6 +1524,7 @@ const I={};
 I.dealsQ=el=>{UI.dealsQ=el.value;patch('#deals-list',dealsListHtml())};
 I.supplyQ=el=>{UI.supply.q=el.value;patch('#sp-res',supplyResultsHtml())};
 I.supplyPrice=el=>{const i=UI.supply.items.find(x=>x.productId===el.dataset.id);if(i)i.price=el.value};
+I.invQ=el=>{UI.inv.q=el.value;patch('#inv-res',invResHtml())};
 I.whQ=el=>{UI.whQ=el.value;UI.stLimit=60;stRefresh()};
 I.payAmt=el=>{const s=UI.sheet,d=deal(s.dealId);s.amount=el.value;const h=payHint(s.acct,s.amount,dealLeft(d),dcur(d));const hint=$('#pay-amt-hint');hint.textContent=h.text;hint.className='hint'+(h.warn?' warn':'');$('#pay-ok').disabled=!h.valid};
 I.ndCustomer=el=>{UI.draft.customer=el.value};
@@ -1436,6 +1543,8 @@ C.spendWho=el=>{UI.sheet.who=el.value;renderSheet()};
 DD.invUser=v=>{UI.invUser=v;render()};
 DD.pfBlock=(v,root)=>{UI.form.block=v;const l=root.querySelector('.dd-label');if(l)l.textContent=v?'Блок '+v:'Не вказано';root.querySelectorAll('.dd-opt').forEach(o=>{const on=o.dataset.v===v;o.classList.toggle('on',on);o.setAttribute('aria-selected',on);const t=o.querySelector('.tick');if(on&&!t)o.insertAdjacentHTML('beforeend',`<span class="tick">${icon('check',16,2.4)}</span>`);if(!on&&t)t.remove()})};
 DD.spendWho=v=>{UI.sheet.who=v;renderSheet()};
+DD.invWh=v=>{UI.inv={wid:v,block:UI.inv.block,counts:{},extra:[],q:''};render()};
+DD.invBlock=v=>{UI.inv={wid:UI.inv.wid,block:Number(v),counts:{},extra:[],q:''};render()};
 function ddMark(root,v,label){const l=root.querySelector('.dd-label');if(l)l.textContent=label;root.querySelectorAll('.dd-opt').forEach(o=>{const on=o.dataset.v===v;o.classList.toggle('on',on);o.setAttribute('aria-selected',on);const t=o.querySelector('.tick');if(on&&!t)o.insertAdjacentHTML('beforeend',`<span class="tick">${icon('check',16,2.4)}</span>`);if(!on&&t)t.remove()})}
 DD.pfDonor=(v,root)=>{const f=UI.form;const old=f.donorId?donorName(donor(f.donorId)):'';f.donorId=v;const d=donor(v);ddMark(root,v,d?donorName(d):'Без донора');
   if(d&&!compatList({compat:f.compat}).includes(donorName(d))&&(!f.compat.trim()||f.compat.trim()===old)){f.compat=donorName(d);const t=$('#pf-compat');if(t)t.value=f.compat}};

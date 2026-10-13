@@ -342,6 +342,24 @@ function createLogic(db, secret) {
       }
       return { dealId: d.id, no: d.no, units: items.reduce((s, i) => s + i.n, 0), value, refund };
     },
+    // Інвентаризація блоку: фактична кількість на складі, розбіжності — корекцією в журнал
+    inventoryBlock(user, p) {
+      const w = needActiveWh(str(p.warehouseId, 64));
+      const bn = Number(p.block); if (!(Number.isInteger(bn) && bn >= 1 && bn <= 20)) fail('Оберіть блок від 1 до 20');
+      const counts = Array.isArray(p.counts) ? p.counts : [];
+      if (!counts.length) fail('Немає позицій для перевірки');
+      if (counts.length > 500) fail('Забагато позицій');
+      let diffs = 0, moved = 0;
+      for (const c of counts) {
+        const pr = getProduct(str(c.productId, 64)); if (!pr || !pr.active) continue;
+        const target = int(c.quantity, `«${pr.name}», кількість`, 0);
+        const diff = target - qty(pr.id, w.id);
+        if (diff) { changeInv(pr.id, w.id, diff, 'adjustment', user.id); diffs++; }
+        if (target > 0 && pr.block !== bn) { q('UPDATE products SET block = ?, updated_at = ? WHERE id = ?').run(bn, nowISO(), pr.id); moved++; }
+      }
+      setMeta(`inv:${w.id}:${bn}`, JSON.stringify({ at: nowISO(), by: user.id, diffs }));
+      return { diffs, moved };
+    },
     addProductPhotos(user, p) {
       const pr = getProduct(str(p.productId, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
       const list = (Array.isArray(p.photos) ? p.photos : []).map(String).filter(u => /^\/photos\/[a-z0-9_-]+\.(jpg|png|webp)$/i.test(u));
@@ -553,7 +571,7 @@ function createLogic(db, secret) {
     return {
       version: version(),
       me: { id: user.id, name: user.name, role: user.role },
-      data: { users, warehouses, donors, templates: templateInfo(templates), products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
+      data: { invChecks: Object.fromEntries(q("SELECT key, value FROM meta WHERE key LIKE 'inv:%'").all().map(r => [r.key.slice(4), JSON.parse(r.value)])), users, warehouses, donors, templates: templateInfo(templates), products, inventory, invTx, deals, finTx, nextDealNo: Number(getMeta('next_deal_no')), priceCurrency: PRICE_CURRENCY },
     };
   }
 
