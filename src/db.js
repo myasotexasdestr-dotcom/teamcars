@@ -210,8 +210,9 @@ function openDatabase(dataDir) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_fintx_investor ON financial_transactions(investor_user_id)');
   // Структура складу як у каталозі: донор, група/підкатегорія, артикул, виробник, ринкова ціна, сумісність
   const pcols = { donor_id: 'TEXT', grp: "TEXT NOT NULL DEFAULT ''", sub: "TEXT NOT NULL DEFAULT ''", analog: 'INTEGER NOT NULL DEFAULT 0',
-    art: 'INTEGER', manufacturer: "TEXT NOT NULL DEFAULT ''", market_price: 'REAL', compat: "TEXT NOT NULL DEFAULT ''" };
+    art: 'INTEGER', manufacturer: "TEXT NOT NULL DEFAULT ''", market_price: 'REAL', compat: "TEXT NOT NULL DEFAULT ''", ex_url: 'TEXT', ex_img: 'TEXT' };
   for (const [c, t] of Object.entries(pcols)) if (!hasCol('products', c)) db.exec(`ALTER TABLE products ADD COLUMN ${c} ${t}`);
+  if (!hasCol('donors', 'cost')) db.exec('ALTER TABLE donors ADD COLUMN cost REAL');
   db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('next_art', '1')").run();
   const noArt = db.prepare('SELECT id FROM products WHERE art IS NULL ORDER BY created_at, id').all();
   if (noArt.length) db.transaction(() => {

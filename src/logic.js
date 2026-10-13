@@ -258,16 +258,53 @@ function createLogic(db, secret) {
     },
     saveDonor(user, p) {
       const make = str(p.make, 60); if (!make) fail('Вкажіть марку авто');
-      const f = [make, str(p.model, 60), str(p.years, 30), str(p.engine, 60), str(p.color, 40), str(p.vin, 30).toUpperCase(), str(p.notes, 2000)];
+      const cost = p.cost === '' || p.cost == null ? null : num(p.cost, 'Вартість донора');
+      const f = [make, str(p.model, 60), str(p.years, 30), str(p.engine, 60), str(p.color, 40), str(p.vin, 30).toUpperCase(), str(p.notes, 2000), cost];
       let id = p.id ? str(p.id, 64) : null;
       if (id) {
         if (!getDonor(id)) fail('Донора не знайдено');
-        q('UPDATE donors SET make = ?, model = ?, years = ?, engine = ?, color = ?, vin = ?, notes = ? WHERE id = ?').run(...f, id);
+        q('UPDATE donors SET make = ?, model = ?, years = ?, engine = ?, color = ?, vin = ?, notes = ?, cost = ? WHERE id = ?').run(...f, id);
       } else {
         id = newId('dn_');
-        q('INSERT INTO donors (id, make, model, years, engine, color, vin, notes, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)').run(id, ...f, nowISO());
+        q('INSERT INTO donors (id, make, model, years, engine, color, vin, notes, cost, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)').run(id, ...f, nowISO());
       }
       return { donorId: id };
+    },
+    addProductPhotos(user, p) {
+      const pr = getProduct(str(p.productId, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
+      const list = (Array.isArray(p.photos) ? p.photos : []).map(String).filter(u => /^\/photos\/[a-z0-9_-]+\.(jpg|png|webp)$/i.test(u));
+      if (!list.length) fail('Немає фото');
+      let pos = q('SELECT COALESCE(MAX(position), -1) AS m FROM product_photos WHERE product_id = ?').get(pr.id).m;
+      const have = q('SELECT COUNT(*) AS c FROM product_photos WHERE product_id = ?').get(pr.id).c;
+      list.slice(0, Math.max(0, 20 - have)).forEach(u => q('INSERT INTO product_photos (product_id, url, position) VALUES (?, ?, ?)').run(pr.id, u, ++pos));
+      q('UPDATE products SET updated_at = ? WHERE id = ?').run(nowISO(), pr.id);
+      return { productId: pr.id };
+    },
+    // Поставка запчастин з донора: прихід на склад + привʼязка до донора.
+    // Якщо позиція каталогу вже привʼязана до іншого донора — створюється її копія для цього донора.
+    donorSupply(user, p) {
+      const d = getDonor(str(p.donorId, 64)); if (!d) fail('Донора не знайдено');
+      const w = needActiveWh(str(p.warehouseId, 64));
+      const items = Array.isArray(p.items) ? p.items : [];
+      if (!items.length) fail('Додайте хоча б одну запчастину');
+      if (items.length > 300) fail('Забагато позицій за раз');
+      const copyCols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat, ex_url, ex_img';
+      let units = 0; const ids = [];
+      for (const it of items) {
+        const pr = getProduct(str(it.productId, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
+        const n = int(it.quantity, `«${pr.name}», кількість`, 1);
+        const price = it.price === '' || it.price == null ? null : num(it.price, `«${pr.name}», ціна`);
+        let id = pr.id;
+        if (pr.donor_id && pr.donor_id !== d.id && getDonor(pr.donor_id)) {
+          id = newId('p_');
+          insertProduct(id, copyCols, copyCols.split(', ').map(c => c === 'donor_id' ? d.id : c === 'price' ? (price ?? pr.price) : pr[c]));
+        } else {
+          q('UPDATE products SET donor_id = ?, price = COALESCE(?, price), updated_at = ? WHERE id = ?').run(d.id, price && price > 0 ? price : null, nowISO(), id);
+        }
+        changeInv(id, w.id, n, 'receipt', user.id);
+        units += n; ids.push(id);
+      }
+      return { donorId: d.id, units, positions: ids.length };
     },
     deleteDonor(user, p) {
       const d = getDonor(str(p.id, 64)); if (!d) fail('Донора не знайдено');
@@ -410,9 +447,9 @@ function createLogic(db, secret) {
       id: p.id, catalogNumber: p.catalog_number, name: p.name, price: p.price, condition: p.condition,
       defective: b(p.defective), analog: b(p.analog), notes: p.notes, block: p.block ?? null, active: b(p.active), photos: photos[p.id] || [],
       art: p.art, donorId: p.donor_id || null, group: p.grp || '', sub: p.sub || '', manufacturer: p.manufacturer || '',
-      marketPrice: p.market_price ?? null, compat: p.compat || '' }));
+      marketPrice: p.market_price ?? null, compat: p.compat || '', exUrl: p.ex_url || null, exImg: p.ex_img || null }));
     const donors = q('SELECT * FROM donors WHERE deleted = 0 ORDER BY created_at').all().map(d => ({
-      id: d.id, make: d.make, model: d.model, years: d.years, engine: d.engine, color: d.color, vin: d.vin, notes: d.notes, templateKey: d.template_key || null }));
+      id: d.id, make: d.make, model: d.model, years: d.years, engine: d.engine, color: d.color, vin: d.vin, notes: d.notes, cost: d.cost ?? null, templateKey: d.template_key || null }));
     let templates = [];
     try { templates = fs.readdirSync(TEMPLATES_DIR).filter(f => /^[a-z0-9-]+\.json$/.test(f)).map(f => f.slice(0, -5)); } catch (e) { /* немає папки */ }
     const inventory = q('SELECT product_id, warehouse_id, quantity FROM inventory').all()
@@ -446,16 +483,37 @@ function createLogic(db, secret) {
     const file = path.join(TEMPLATES_DIR, key + '.json');
     if (!fs.existsSync(file)) return null;
     const t = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const cols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat';
+    const cols = 'catalog_number, name, price, condition, defective, notes, block, donor_id, grp, sub, analog, manufacturer, market_price, compat, ex_url, ex_img';
     let n = 0;
     for (const r of t.parts || []) {
       const st = STATES[r.c] || STATES.used;
       insertProduct(newId('p_'), cols, [str(r.o, 100).toUpperCase(), str(r.n, 300), 0, st[0], st[2], '', null, donorId,
         GROUPS.includes(r.g) ? r.g : '', str(r.s, 100), st[1], str(r.m, 100), Number.isFinite(r.mp) ? round2(r.mp) : null,
-        (Array.isArray(r.cp) ? r.cp : []).map(x => str(x, 120)).filter(Boolean).join('\n')]);
+        (Array.isArray(r.cp) ? r.cp : []).map(x => str(x, 120)).filter(Boolean).join('\n'), exUrl(r.u), exUrl(r.i)]);
       n++;
     }
     setMeta('tpl:' + key, new Date().toISOString());
+    setMeta('tplx:' + key, 'import');
+    return n;
+  }
+  const exUrl = u => (typeof u === 'string' && /^https:\/\/aleto\.ua\/[\w\-./%]+$/.test(u) ? u : null);
+  // Каталог, завантажений раніше (v14/v15) — доповнюємо посиланнями на приклад і фото-приклад
+  function enrichCatalog(key) {
+    if (getMeta('tplx:' + key) || !getMeta('tpl:' + key)) return 0;
+    const file = path.join(TEMPLATES_DIR, key + '.json');
+    if (!fs.existsSync(file)) return 0;
+    const t = JSON.parse(fs.readFileSync(file, 'utf8'));
+    let n = 0;
+    const byName = q("SELECT id FROM products WHERE ex_url IS NULL AND name = ? AND catalog_number = ? ORDER BY created_at LIMIT 1");
+    const byCode = q("SELECT id FROM products WHERE ex_url IS NULL AND catalog_number = ? AND market_price = ? ORDER BY created_at LIMIT 1");
+    const up = q('UPDATE products SET ex_url = ?, ex_img = ? WHERE id = ?');
+    for (const r of t.parts || []) {
+      if (!r.u) continue;
+      const code = str(r.o, 100).toUpperCase();
+      const row = byName.get(str(r.n, 300), code) || (code && Number.isFinite(r.mp) ? byCode.get(code, round2(r.mp)) : null);
+      if (row) { up.run(exUrl(r.u), exUrl(r.i), row.id); n++; }
+    }
+    setMeta('tplx:' + key, String(n));
     return n;
   }
   // Під час запуску: усі шаблони з папки templates, яких ще немає в базі, додаються в загальний каталог
@@ -465,10 +523,10 @@ function createLogic(db, secret) {
     try { keys = fs.readdirSync(TEMPLATES_DIR).filter(f => /^[a-z0-9-]+\.json$/.test(f)).map(f => f.slice(0, -5)); } catch (e) { return done; }
     if (!q('SELECT COUNT(*) AS c FROM users').get().c) return done;
     for (const key of keys) {
-      if (getMeta('tpl:' + key)) continue;
+      if (getMeta('tpl:' + key)) { if (!getMeta('tplx:' + key)) db.transaction(() => { if (enrichCatalog(key)) bump(); })(); continue; }
       db.transaction(() => {
         // уже імпортовано раніше через донора-шаблон (v14) — не дублюємо
-        if (q('SELECT id FROM donors WHERE template_key = ?').get(key)) { setMeta('tpl:' + key, 'donor'); return; }
+        if (q('SELECT id FROM donors WHERE template_key = ?').get(key)) { setMeta('tpl:' + key, 'donor'); if (enrichCatalog(key)) bump(); return; }
         const n = importCatalog(key, null);
         if (n) { bump(); done.push({ key, title: templateInfo([key])[0].title, count: n }); }
       })();
