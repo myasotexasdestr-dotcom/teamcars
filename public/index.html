@@ -668,6 +668,7 @@ function ndResultsHtml(){
     recs.forEach(r=>rows.push({p,w:wh(r.warehouseId),q:r.quantity+origOf(p.id,r.warehouseId)}));
   });
   if(!rows.length) return '<span class="muted sm" style="padding:0 6px">У базі нічого не знайдено</span>';
+  rows.sort((a,b)=>(!!b.w-!!a.w)||(!!b.r-!!a.r));
   return `<div class="res">${rows.slice(0,12).map(({p,w,q,r})=>{
     const inDeal=w&&dr.items.some(i=>i.productId===p.id&&i.warehouseId===w.id);
     return `<div><div class="col grow"><span class="name" style="white-space:normal">${esc(p.name)}</span><span class="muted sm">${esc(p.catalogNumber||'без номера')}${p.block?' · Блок '+p.block:''} · ${w?esc(w.name)+' · '+q+' шт.':r?'усе в неоплачених угодах':'немає в наявності'}</span><span class="num" style="font-size:13px;font-weight:700">${p.price?money(p.price,PRICE_CUR):p.marketPrice?'≈ '+money(p.marketPrice,PRICE_CUR)+' ринкова':'без ціни'}</span></div>
@@ -817,9 +818,10 @@ function whListHtml(){
   const m=stockMaps();
   if(!stShowsList())return stTilesHtml(m);
   let list=stScope(stAvailList(stPool(m),m));
-  list.sort((a,b)=>a.name.localeCompare(b.name,'uk'));
+  const rank=p=>(m.q[p.id]>0?0:m.r[p.id]>0?1:2);
+  list.sort((a,b)=>rank(a)-rank(b)||a.name.localeCompare(b.name,'uk'));
   const filtered=UI.stAvail!=='all'||UI.stDonor!=='all'||UI.stGroup||UI.whTab!=='all';
-  const head=`<div class="row between muted sm" style="padding:0 4px"><span>${posWord(list.length)}</span>${filtered?'<button type="button" class="link sm" data-act="stReset">Скинути фільтри</button>':'<span>За алфавітом</span>'}</div>`;
+  const head=`<div class="row between muted sm" style="padding:0 4px"><span>${posWord(list.length)}</span>${filtered?'<button type="button" class="link sm" data-act="stReset">Скинути фільтри</button>':'<span>Спершу в наявності</span>'}</div>`;
   const q0=UI.whQ.trim();
   const addBtn=q0?`<button type="button" class="btn primary" style="align-self:center;max-width:100%;white-space:normal;height:auto;min-height:52px;padding:10px 20px" data-act="addFromSearch">${icon('plus',18,2.2)}<span>Додати «${esc(q0.length>40?q0.slice(0,40)+'…':q0)}»</span></button>`:'';
   if(!list.length) return head+(q0?`<div class="card" style="align-items:center;text-align:center;gap:12px;padding:24px 16px"><span style="font-weight:700">${filtered?'З цими фільтрами нічого не знайдено':'Такого товару ще немає на складі'}</span><span class="muted sm">Додайте його — назву або номер уже підставлено</span>${addBtn}</div>`:`<div class="empty">${filtered?'З цими фільтрами нічого немає':'Тут поки немає товарів'}</div>`);
@@ -838,16 +840,17 @@ function whListHtml(){
 const stRefresh=()=>{patch('#st-filters',stFiltersHtml());patch('#wh-list',whListHtml())};
 function donorStats(d){
   const ps=DB.products.filter(p=>p.donorId===d.id);const ids=new Set(ps.map(p=>p.id));
-  const stockVal=ps.filter(p=>p.active).reduce((s,p)=>s+totalQty(p.id)*priceOf(p),0);
+  const stockVal=ps.filter(p=>p.active).reduce((s,p)=>s+totalQty(p.id)*(Number(p.price)||0),0);
+  const noPrice=ps.filter(p=>p.active&&totalQty(p.id)>0&&!p.price).length;
   const units=ps.filter(p=>p.active).reduce((s,p)=>s+totalQty(p.id),0);
   const sold={},held={};DB.deals.forEach(x=>{if(x.status==='cancelled')return;const t=x.status==='done'?sold:held;x.items.forEach(i=>{if(ids.has(i.productId)){const c=dcur(x);t[c]=(t[c]||0)+i.quantity*i.price}})});
-  return {stockVal,units,sold,held};
+  return {stockVal,units,sold,held,noPrice};
 }
 const curSum=o=>{const ks=Object.keys(o).filter(k=>o[k]);return ks.length?ks.map(k=>money(o[k],k)).join(' + '):money(0,PRICE_CUR)};
 function stDonorHtml(){const d=UI.stDonor!=='all'&&UI.stDonor!=='none'?donor(UI.stDonor):null;if(!d)return '';const n=activeProducts().filter(p=>p.donorId===d.id).length;
   const st=donorStats(d);const soldUsd=st.sold.USD||0;const ret=d.cost?soldUsd-d.cost:null;
   return `<section class="card" style="gap:6px;padding:14px 16px"><div class="row between gap"><div class="col" style="gap:2px;min-width:0"><span class="lbl">Донор · ${partsWord(n)}</span><b style="font-size:17px">${esc(donorName(d))}</b><span class="muted sm">${esc([d.engine,d.color,d.vin&&'VIN '+d.vin].filter(Boolean).join(' · ')||'Двигун, колір, VIN — не вказано')}</span></div><button type="button" class="round" data-act="donorEdit" data-id="${d.id}" aria-label="Редагувати донора">${icon('edit',18)}</button></div>${d.notes?`<span class="sm" style="color:var(--ink2);white-space:pre-wrap">${esc(d.notes)}</span>`:''}
-  <div class="stat2"><div><span>Вартість донора</span><b class="num">${d.cost!=null?money(d.cost,PRICE_CUR):'—'}</b></div><div><span>Запчастини на складі</span><b class="num">${money(st.stockVal,PRICE_CUR)}</b><span>${st.units} шт. · ваша або ринкова ціна</span></div>
+  <div class="stat2"><div><span>Вартість донора</span><b class="num">${d.cost!=null?money(d.cost,PRICE_CUR):'—'}</b></div><div><span>Запчастини на складі</span><b class="num">${money(st.stockVal,PRICE_CUR)}</b><span>${st.units} шт.${st.noPrice?` · ${st.noPrice} без ціни`:''}</span></div>
   <div><span>Продано запчастин на</span><b class="num">${curSum(st.sold)}</b>${Object.keys(st.held).length?`<span>ще в угодах: ${curSum(st.held)}</span>`:''}</div><div><span>Окупність</span><b class="num" style="color:${ret==null?'var(--ink)':ret>=0?'var(--blue)':'var(--warn)'}">${ret==null?'—':(ret>=0?'+':'−')+money(Math.abs(ret),PRICE_CUR)}</b>${ret!=null&&ret<0?'<span>до окупності</span>':''}</div></div>
   <button type="button" class="btn primary" data-act="supplyStart" data-id="${d.id}">${icon('plus',18,2.2)}Поставка запчастин з донора</button>
   ${n?'':'<span class="hint">Оприбуткуйте зняті з авто запчастини через «Поставка» — вони привʼяжуться до цього донора.</span>'}</section>`}
@@ -1262,7 +1265,10 @@ A.pfCond=el=>{UI.form.state=el.dataset.v;patch('#pf-cond',pfCondHtml())};
 A.pfStock=el=>{const f=UI.form,w=el.dataset.w;f.stock[w]=Math.max(0,(f.stock[w]||0)+Number(el.dataset.d));patch('#pf-stock',pfStockHtml());patch('#pf-total',String(pfTotal()))};
 A.pfPhotoDel=el=>{UI.form.photos.splice(Number(el.dataset.v),1);patch('#pf-photos',pfPhotosHtml());patch('#pf-photo-count',UI.form.photos.length+' фото')};
 A.pfSave=()=>pfSave();
-A.pfDeleteAsk=()=>openSheet({type:'confirm',title:'Видалити товар?',text:'Товар зникне зі складу та пошуку. Угоди, у яких він був, збережуть інформацію про нього.',ok:'Видалити',on:'deleteProduct',id:UI.form.id});
+A.pfDeleteAsk=()=>{const id=UI.form.id;const left=DB.inventory.filter(r=>r.productId===id).reduce((a,r)=>a+r.quantity,0);const od=DB.deals.filter(d=>d.status==='new'&&d.items.some(i=>i.productId===id));
+  if(left>0){UI.form.error=`На складі ще ${left} шт. Спершу поставте кількість 0 у блоці «Наявність» і збережіть — це запишеться в журнал як корекція.`;return patch('#pf-err',esc(UI.form.error))}
+  if(od.length){UI.form.error=`Товар є в неоплачених угодах: ${od.map(d=>'№'+pad(d.no)).join(', ')}. Спершу приберіть його звідти.`;return patch('#pf-err',esc(UI.form.error))}
+  openSheet({type:'confirm',title:'Видалити товар?',text:'Товар зникне зі складу та пошуку. Угоди, у яких він був, збережуть інформацію про нього.',ok:'Видалити',on:'deleteProduct',id:UI.form.id})};
 A.confirmOk=async()=>{const cs=UI.sheet,on=cs.on;
   try{
     if(on==='deleteWh'){await act('deleteWarehouse',{id:cs.id});const w=wh(cs.id);if(UI.whTab===cs.id)UI.whTab='all';UI.sheet=null;render();toast(`Склад «${w?w.name:''}» видалено`)}

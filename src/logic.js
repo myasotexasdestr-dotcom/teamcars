@@ -29,9 +29,10 @@ function num(v, label, { min = 0, allowZero = true } = {}) {
   if (n < min || (!allowZero && n === 0)) fail(`${label}: має бути ${allowZero ? 'не менше ' + min : 'більше 0'}`);
   return round2(n);
 }
-function int(v, label, min = 0) {
+function int(v, label, min = 0, max = 100000) {
   const n = Number(v);
   if (!Number.isInteger(n) || n < min) fail(`${label}: має бути цілим числом від ${min}`);
+  if (n > max) fail(`${label}: не більше ${max}`);
   return n;
 }
 function str(v, max = 500) { return String(v ?? '').trim().slice(0, max); }
@@ -298,6 +299,7 @@ function createLogic(db, secret) {
         if (pr.donor_id && pr.donor_id !== d.id && getDonor(pr.donor_id)) {
           id = newId('p_');
           insertProduct(id, copyCols, copyCols.split(', ').map(c => c === 'donor_id' ? d.id : c === 'price' ? (price ?? pr.price) : pr[c]));
+          q('SELECT url, position FROM product_photos WHERE product_id = ? ORDER BY position, id').all(pr.id).forEach(r => q('INSERT INTO product_photos (product_id, url, position) VALUES (?, ?, ?)').run(id, r.url, r.position));
         } else {
           q('UPDATE products SET donor_id = ?, price = COALESCE(?, price), updated_at = ? WHERE id = ?').run(d.id, price && price > 0 ? price : null, nowISO(), id);
         }
@@ -322,6 +324,10 @@ function createLogic(db, secret) {
     },
     deleteProduct(user, p) {
       const pr = getProduct(str(p.id, 64)); if (!pr || !pr.active) fail('Товар не знайдено');
+      const left = q('SELECT COALESCE(SUM(quantity),0) AS s FROM inventory WHERE product_id = ?').get(pr.id).s;
+      if (left > 0) fail(`На складі ще ${left} шт. Спершу обнуліть кількість у «Редагувати → Наявність» — це запишеться в журнал як корекція.`, 409, 'stock');
+      const open = q("SELECT DISTINCT d.no FROM deals d JOIN deal_items i ON i.deal_id = d.id WHERE d.status = 'new' AND i.product_id = ? ORDER BY d.no").all(pr.id).map(r => '№' + String(r.no).padStart(6, '0'));
+      if (open.length) fail(`Товар є в неоплачених угодах: ${open.join(', ')}. Спершу приберіть його звідти.`, 409, 'deal');
       q('UPDATE products SET active = 0, updated_at = ? WHERE id = ?').run(nowISO(), pr.id);
       return { productId: pr.id };
     },
